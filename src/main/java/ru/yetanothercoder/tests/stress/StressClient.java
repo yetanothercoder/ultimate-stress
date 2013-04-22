@@ -6,10 +6,13 @@ import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 
+import java.net.BindException;
+import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * @author Mikhail Baturov,  4/20/13 11:11 AM
@@ -17,19 +20,26 @@ import java.util.concurrent.TimeUnit;
 public class StressClient {
 
     private final int rps;
+    private final int connLimit;
     private final String host;
     private final int port;
-    private final ChannelBuffer getRequest;
+    private final ChannelBuffer GET;
     private final ClientBootstrap bootstrap;
+    private final AtomicInteger connected = new AtomicInteger(0);
+    private final AtomicInteger te = new AtomicInteger(0);
+    private final AtomicInteger be = new AtomicInteger(0);
+    private final String name;
 
-    public StressClient(int rps, String host, int port) {
+    public StressClient(String name, String host, int port, int rps, int connLimit) {
+        this.name = name;
+        if (rps > 1_000_000) throw new UnsupportedOperationException("rps must be <=1M");
+
         this.port = port;
-        if (rps > 1000) throw new UnsupportedOperationException();
-
+        this.connLimit = connLimit;
         this.rps = rps;
         this.host = host;
-        getRequest = ChannelBuffers.copiedBuffer(
-                        "GET /my/app HTTP/1.1\n" +
+        GET = ChannelBuffers.copiedBuffer(
+                "GET /my/app HTTP/1.1\n" +
                         "Host: " + host + "\n" +
                         "Connection: close\n" +
                         "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0\n",
@@ -49,32 +59,79 @@ public class StressClient {
     }
 
     public void start() {
-        int rateMillis = 1000 / rps;
+        int rateMicros = 1000000 / rps;
         Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
-                future.addListener(ChannelFutureListener.CLOSE);
+                if (connected.get() < connLimit) {
+                    connected.incrementAndGet();
+                    ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+
+                    /*future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            connected.decrementAndGet();
+                        }
+                    });*/
+                }
             }
-        }, 0, rateMillis, TimeUnit.MILLISECONDS);
+        }, 0, rateMicros, TimeUnit.MICROSECONDS);
+
+        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
+            @Override
+            public void run() {
+                System.out.printf("%10s stat: connected=%5s, timeouts=%5s, bind errors=%5s%n",
+                        name, connected.get(), te.getAndSet(0), be.getAndSet(0));
+            }
+        }, 0, 1, TimeUnit.SECONDS);
     }
 
     public static void main(String[] args) {
+        String host = "localhost";
+        if (args.length > 0) {
+            host = args[0];
+        }
+        int port = 8080;
+        if (args.length > 1) {
+            port = Integer.parseInt(args[1]);
+        }
 
+        new StressClient("client1",  host, port, 10_000, 10_000).start();
+        new StressClient("client2", host, port, 10_000, 10_000).start();
+        new StressClient("client3", host, port, 10_000, 10_000).start();
     }
-
-
 
 
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-            super.messageReceived(ctx, e);
+            // when server responds - finished
+            connected.decrementAndGet();
+            e.getChannel().close();
         }
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-            e.getChannel().write(getRequest);
+            //connected.incrementAndGet();
+            e.getChannel().write(GET);
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+            e.getChannel().close();
+
+            Throwable exc = e.getCause();
+            //exc.printStackTrace();
+
+            if (exc instanceof ConnectTimeoutException) {
+                te.incrementAndGet();
+            } else if (exc instanceof BindException) {
+                be.incrementAndGet();
+            } else if (exc instanceof ConnectException) {
+                System.err.printf("failed to connect to %s:%s%n", host, port);
+            } else {
+                exc.printStackTrace();
+            }
         }
     }
 }

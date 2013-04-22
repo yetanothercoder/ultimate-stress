@@ -55,10 +55,15 @@ public class CountingServer {
             @Override
             public void run() {
                 int perSecond = received.getAndSet(0);
-                System.err.printf("received: %s rps%n", perSecond);
+                if (perSecond > 0) {
+                    System.out.printf("received: %s rps%n", perSecond);
+                }
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
+
+
+
 
     private class CountingHandler extends SimpleChannelUpstreamHandler {
         @Override
