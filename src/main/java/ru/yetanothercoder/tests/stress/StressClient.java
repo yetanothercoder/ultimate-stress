@@ -28,6 +28,7 @@ public class StressClient {
     private final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger te = new AtomicInteger(0);
     private final AtomicInteger be = new AtomicInteger(0);
+    private final AtomicInteger ce = new AtomicInteger(0);
     private final String name;
 
     public StressClient(String name, String host, int port, int rps, int connLimit) {
@@ -80,8 +81,8 @@ public class StressClient {
         Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                System.out.printf("%10s stat: connected=%5s, timeouts=%5s, bind errors=%5s%n",
-                        name, connected.get(), te.getAndSet(0), be.getAndSet(0));
+                System.out.printf("%10s stat: connected=%5s, timeouts=%5s, bind errors=%5s, connect errors=%s%n",
+                        name, connected.get(), te.getAndSet(0), be.getAndSet(0), ce.getAndSet(0));
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
@@ -96,9 +97,8 @@ public class StressClient {
             port = Integer.parseInt(args[1]);
         }
 
-        new StressClient("client1",  host, port, 10_000, 10_000).start();
-        new StressClient("client2", host, port, 10_000, 10_000).start();
-        new StressClient("client3", host, port, 10_000, 10_000).start();
+        new StressClient("client1", host, port, 30_000, 30_000).start();
+//        new StressClient("client2", host, port, 30_000, 30_000).start();
     }
 
 
@@ -121,14 +121,13 @@ public class StressClient {
             e.getChannel().close();
 
             Throwable exc = e.getCause();
-            //exc.printStackTrace();
 
             if (exc instanceof ConnectTimeoutException) {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
                 be.incrementAndGet();
             } else if (exc instanceof ConnectException) {
-                System.err.printf("failed to connect to %s:%s%n", host, port);
+                ce.incrementAndGet();
             } else {
                 exc.printStackTrace();
             }
