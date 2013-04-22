@@ -26,6 +26,7 @@ public class StressClient {
     private final ChannelBuffer GET;
     private final ClientBootstrap bootstrap;
     private final AtomicInteger connected = new AtomicInteger(0);
+    private final AtomicInteger sent = new AtomicInteger(0);
     private final AtomicInteger te = new AtomicInteger(0);
     private final AtomicInteger be = new AtomicInteger(0);
     private final AtomicInteger ce = new AtomicInteger(0);
@@ -57,6 +58,7 @@ public class StressClient {
                 return Channels.pipeline(new StressClientHandler());
             }
         });
+        bootstrap.setOption("reuseAddress", "true");
     }
 
     public void start() {
@@ -67,13 +69,6 @@ public class StressClient {
                 if (connected.get() < connLimit) {
                     connected.incrementAndGet();
                     ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
-
-                    /*future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            connected.decrementAndGet();
-                        }
-                    });*/
                 }
             }
         }, 0, rateMicros, TimeUnit.MICROSECONDS);
@@ -81,8 +76,8 @@ public class StressClient {
         Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                System.out.printf("%10s stat: connected=%5s, timeouts=%5s, bind errors=%5s, connect errors=%s%n",
-                        name, connected.get(), te.getAndSet(0), be.getAndSet(0), ce.getAndSet(0));
+                System.out.printf("%10s stat: connected=%5s, sent=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%s%n",
+                        name, connected.get(), sent.getAndSet(0), te.getAndSet(0), be.getAndSet(0), ce.getAndSet(0));
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
@@ -97,7 +92,7 @@ public class StressClient {
             port = Integer.parseInt(args[1]);
         }
 
-        new StressClient("client1", host, port, 30_000, 30_000).start();
+        new StressClient("client1", host, port, 40_000, 40_000).start();
 //        new StressClient("client2", host, port, 30_000, 30_000).start();
     }
 
@@ -112,8 +107,8 @@ public class StressClient {
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-            //connected.incrementAndGet();
             e.getChannel().write(GET);
+            sent.incrementAndGet();
         }
 
         @Override
