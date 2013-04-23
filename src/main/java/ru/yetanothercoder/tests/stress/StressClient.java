@@ -58,7 +58,7 @@ public class StressClient {
                 return Channels.pipeline(new StressClientHandler());
             }
         });
-        bootstrap.setOption("reuseAddress", "true");
+        //bootstrap.setOption("reuseAddress", "true");
     }
 
     public void start() {
