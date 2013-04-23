@@ -67,8 +67,17 @@ public class StressClient {
             @Override
             public void run() {
                 if (connected.get() < connLimit) {
+                    // counting connections here is not fully fair, but works!
                     connected.incrementAndGet();
                     ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+
+                    future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            // by logic you should decrementing connections here, but.. it's not work
+                            // connected.decrementAndGet();
+                        }
+                    });
                 }
             }
         }, 0, rateMicros, TimeUnit.MICROSECONDS);
@@ -100,13 +109,15 @@ public class StressClient {
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-            // when server responds - finished
+            // the same here - decrementing connections here is not fully fair but works!
             connected.decrementAndGet();
             e.getChannel().close();
         }
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+            // by logic you should count connection here, but in practice - it doesn't work
+            // connected.incrementAndGet();
             e.getChannel().write(GET);
             sent.incrementAndGet();
         }
