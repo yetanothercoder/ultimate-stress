@@ -117,7 +117,14 @@ public class StressClient {
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
             // by logic you should count connection here, but in practice - it doesn't work
-            // connected.incrementAndGet();
+//            connected.incrementAndGet();
+//            ctx.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
+//                @Override
+//                public void operationComplete(ChannelFuture future) throws Exception {
+//                    connected.decrementAndGet();
+//                }
+//            });
+
             e.getChannel().write(GET);
             sent.incrementAndGet();
         }
