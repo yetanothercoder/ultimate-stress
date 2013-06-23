@@ -5,6 +5,10 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
+import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.Timer;
+import org.jboss.netty.util.TimerTask;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
@@ -28,9 +32,19 @@ public class CountingServer {
     private final int port;
 
     private final ScheduledExecutorService periodicExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final Timer hwTimer;
+    private final int randomDelay;
+    private final TimeUnit delayUnit;
 
     public CountingServer(int port) {
+        this(port, -1, null);
+    }
+
+    public CountingServer(int port, int randomDelay, TimeUnit delayUnit) {
+        this.delayUnit = delayUnit;
+        this.randomDelay = randomDelay;
         this.port = port;
+        hwTimer = new HashedWheelTimer(10, TimeUnit.MILLISECONDS);
     }
 
     public void start() {
@@ -67,13 +81,24 @@ public class CountingServer {
 
     private class CountingHandler extends SimpleChannelUpstreamHandler {
         @Override
-        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+        public void messageReceived(ChannelHandlerContext ctx, final MessageEvent e) throws Exception {
             received.incrementAndGet();
 
             ChannelBuffer message = (ChannelBuffer) e.getMessage();
-
             //System.out.println("received:\n" + new String(message.array()));
 
+            if (randomDelay > 0) {
+                int delay = (int) (Math.random() * randomDelay);
+                hwTimer.newTimeout(new TimerTask() {
+                    @Override
+                    public void run(Timeout timeout) throws Exception {
+                        writeAnswer(e);
+                    }
+                }, randomDelay, delayUnit);
+            }
+        }
+
+        private void writeAnswer(MessageEvent e) {
             e.getChannel().write(RESP204);
             e.getChannel().close();
         }
