@@ -12,6 +12,7 @@ import org.jboss.netty.util.TimerTask;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
+import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -35,6 +36,7 @@ public class CountingServer {
     private final Timer hwTimer;
     private final int randomDelay;
     private final TimeUnit delayUnit;
+    private final Random r = new Random();
 
     public CountingServer(int port) {
         this(port, -1, null);
@@ -88,7 +90,7 @@ public class CountingServer {
             //System.out.println("received:\n" + new String(message.array()));
 
             if (randomDelay > 0) {
-                int delay = (int) (Math.random() * randomDelay);
+                int delay = r.nextInt(randomDelay);
                 hwTimer.newTimeout(new TimerTask() {
                     @Override
                     public void run(Timeout timeout) throws Exception {
