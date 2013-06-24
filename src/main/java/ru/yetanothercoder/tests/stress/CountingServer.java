@@ -14,7 +14,6 @@ import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
 import java.util.Random;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -32,7 +31,6 @@ public class CountingServer {
 
     private final int port;
 
-    private final ScheduledExecutorService periodicExecutor = Executors.newSingleThreadScheduledExecutor();
     private final Timer hwTimer;
     private final int randomDelay;
     private final TimeUnit delayUnit;
@@ -54,7 +52,7 @@ public class CountingServer {
         ServerBootstrap bootstrap = new ServerBootstrap(
                 new NioServerSocketChannelFactory(
                         Executors.newCachedThreadPool(),
-                        Executors.newFixedThreadPool(8)));
+                        Executors.newCachedThreadPool()));
 
         // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
@@ -67,7 +65,7 @@ public class CountingServer {
         // Bind and start to accept incoming connections.
         bootstrap.bind(new InetSocketAddress(port));
 
-        periodicExecutor.scheduleAtFixedRate(new Runnable() {
+        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
                 int perSecond = received.getAndSet(0);
@@ -96,7 +94,9 @@ public class CountingServer {
                     public void run(Timeout timeout) throws Exception {
                         writeAnswer(e);
                     }
-                }, randomDelay, delayUnit);
+                }, delay, delayUnit);
+            } else {
+                writeAnswer(e);
             }
         }
 

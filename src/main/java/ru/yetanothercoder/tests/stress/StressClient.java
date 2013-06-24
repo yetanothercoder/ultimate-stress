@@ -2,7 +2,6 @@ package ru.yetanothercoder.tests.stress;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
@@ -11,7 +10,6 @@ import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.Timer;
 import org.jboss.netty.util.TimerTask;
 
 import java.io.IOException;
@@ -25,7 +23,9 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.util.concurrent.TimeUnit.NANOSECONDS;
+import static java.lang.Integer.parseInt;
+import static java.util.concurrent.TimeUnit.MICROSECONDS;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * TCP/IP Stress Client based on Netty
@@ -34,7 +34,7 @@ import static java.util.concurrent.TimeUnit.NANOSECONDS;
  */
 public class StressClient {
 
-    private final RequestSource<ChannelBuffer> requestSource;
+    private final RequestSource requestSource;
     private final SocketAddress addr;
     private final int rps;
     private final int connLimit;
@@ -51,7 +51,6 @@ public class StressClient {
     private final String name = "Client#1";
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final Timer timer = new HashedWheelTimer();
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
@@ -59,25 +58,25 @@ public class StressClient {
     /**
      * connection limit factor (limit=rps*factor), as tcp connection number is slightly greater than response number
      */
-    private static final double CONNECTION_FACTOR = 1.5;
+    private static final double CONNECTION_LIMIT_FACTOR = 1.5;
 
-    public StressClient(String host, int port, RequestSource<ChannelBuffer> requestSource, int rps) {
+    public StressClient(String host, int port, RequestSource requestSource, int rps) {
         this(host, port, requestSource, rps, -1, -1, false, false);
     }
 
-    public StressClient(String host, int port, RequestSource<ChannelBuffer> requestSource, int rps,
+    public StressClient(String host, int port, RequestSource requestSource, int rps,
                         final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
 
-        if (rps >= 1_000_000_000) throw new IllegalArgumentException("rps must be <=1B");
+        if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
 
-        this.hwTimer = new HashedWheelTimer(10, TimeUnit.MILLISECONDS); // tuning these params didn't matter much
+        this.hwTimer = new HashedWheelTimer(100, TimeUnit.MILLISECONDS); // tuning these params didn't matter much
 
         this.requestSource = requestSource;
         this.print = print;
         this.addr = new InetSocketAddress(host, port);
 
-        this.connLimit = (int) (rps * CONNECTION_FACTOR);
+        this.connLimit = (int) (rps * CONNECTION_LIMIT_FACTOR);
         this.rps = rps;
         this.debug = debug;
 
@@ -93,11 +92,11 @@ public class StressClient {
                 ChannelPipeline pipeline = Channels.pipeline();
                 if (readTimeoutMs > 0) {
                     pipeline.addLast("readTimer",
-                            new ReadTimeoutHandler(timer, readTimeoutMs, TimeUnit.MILLISECONDS));
+                            new ReadTimeoutHandler(hwTimer, readTimeoutMs, TimeUnit.MILLISECONDS));
                 }
                 if (writeTimeoutMs > 0) {
                     pipeline.addLast("writeTimer",
-                            new WriteTimeoutHandler(timer, writeTimeoutMs, TimeUnit.MILLISECONDS));
+                            new WriteTimeoutHandler(hwTimer, writeTimeoutMs, TimeUnit.MILLISECONDS));
                 }
                 pipeline.addLast("stress", stressClientHandler);
                 return pipeline;
@@ -109,16 +108,16 @@ public class StressClient {
     public void start() {
         System.out.printf("Started stress client `%s to `%s` with %,d rps%n", name, addr, rps);
 
-        final int rateNanos = 1_000_000_000 / rps;
+        final int rateMicros = 1_000_000 / rps;
         hwTimer.newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
                 if (!timeout.isCancelled() && connected.get() < connLimit) {
                     sendOne();
                 }
-                hwTimer.newTimeout(this, rateNanos, NANOSECONDS);
+                hwTimer.newTimeout(this, rateMicros, MICROSECONDS);
             }
-        }, rateNanos, NANOSECONDS);
+        }, rateMicros, MICROSECONDS);
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -126,7 +125,7 @@ public class StressClient {
                 showStats();
 
             }
-        }, 0, 1, TimeUnit.SECONDS);
+        }, 0, 1, SECONDS);
     }
 
     private void showStats() {
@@ -146,7 +145,7 @@ public class StressClient {
     }
 
     private void sendOne() {
-        // counting connections here is not fully fair, but works!
+        // counting connections beforehand!
         connected.incrementAndGet();
 
         ChannelFuture future = bootstrap.connect(addr);
@@ -169,23 +168,19 @@ public class StressClient {
 
     public static void main(String[] args) {
         final String host = args.length > 0 ? args[0] : "localhost";
-        final int port = args.length > 1 ? Integer.parseInt(args[1]) : 8080;
-        final int rps = args.length > 2 ? Integer.parseInt(args[2]) : 30_000;
-
-        final String getRequest = "GET /my/app HTTP/1.1\n" +
-                "Host: " + String.format("%s:%s", host, port) + "\n" +
-                "Connection: close\n" +
-                "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0\n";
-
-        RequestSource<ChannelBuffer> singleGet = new RequestSource<ChannelBuffer>() {
-            @Override
-            public ChannelBuffer next() {
-                return ChannelBuffers.copiedBuffer("bla bla".getBytes());
-            }
-        };
+        final int port = args.length > 1 ? parseInt(args[1]) : 8080;
+        final int rps = args.length > 2 ? parseInt(args[2]) : 1_000;
 
         //new StressClient(, 40_000).start();
-        new StressClient(host, port, singleGet, rps).start();
+        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps);
+        client.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                client.stop();
+            }
+        });
     }
 
     public int getSentTotal() {
