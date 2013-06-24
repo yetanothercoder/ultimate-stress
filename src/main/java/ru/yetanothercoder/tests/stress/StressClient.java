@@ -5,47 +5,81 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.handler.timeout.ReadTimeoutException;
+import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
+import org.jboss.netty.handler.timeout.WriteTimeoutException;
+import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
+import org.jboss.netty.util.HashedWheelTimer;
+import org.jboss.netty.util.Timeout;
+import org.jboss.netty.util.Timer;
+import org.jboss.netty.util.TimerTask;
 
+import java.io.IOException;
 import java.net.BindException;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
+import java.net.SocketAddress;
 import java.nio.charset.Charset;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.util.concurrent.TimeUnit.NANOSECONDS;
+
 /**
- * @author Mikhail Baturov,  4/20/13 11:11 AM
+ * TCP/IP Stress Client based on Netty
+ *
+ * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
  */
 public class StressClient {
 
+    private final RequestSource<ChannelBuffer> requestSource;
+    private final SocketAddress addr;
     private final int rps;
     private final int connLimit;
-    private final String host;
-    private final int port;
-    private final ChannelBuffer GET;
     private final ClientBootstrap bootstrap;
     private final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger sent = new AtomicInteger(0);
+    private final AtomicInteger received = new AtomicInteger(0);
+    private final AtomicInteger total = new AtomicInteger(0);
     private final AtomicInteger te = new AtomicInteger(0);
     private final AtomicInteger be = new AtomicInteger(0);
     private final AtomicInteger ce = new AtomicInteger(0);
-    private final String name;
+    private final AtomicInteger ie = new AtomicInteger(0);
+    private final AtomicInteger nn = new AtomicInteger(0);
+    private final String name = "Client#1";
+    private final HashedWheelTimer hwTimer;
+    private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final Timer timer = new HashedWheelTimer();
+    private final StressClientHandler stressClientHandler = new StressClientHandler();
+    private final boolean print;
+    private final boolean debug;
 
-    public StressClient(String name, String host, int port, int rps, int connLimit) {
-        this.name = name;
-        if (rps > 1_000_000) throw new UnsupportedOperationException("rps must be <=1M");
+    /**
+     * connection limit factor (limit=rps*factor), as tcp connection number is slightly greater than response number
+     */
+    private static final double CONNECTION_FACTOR = 1.5;
 
-        this.port = port;
-        this.connLimit = connLimit;
+    public StressClient(String host, int port, RequestSource<ChannelBuffer> requestSource, int rps) {
+        this(host, port, requestSource, rps, -1, -1, false, false);
+    }
+
+    public StressClient(String host, int port, RequestSource<ChannelBuffer> requestSource, int rps,
+                        final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
+
+        if (rps >= 1_000_000_000) throw new IllegalArgumentException("rps must be <=1B");
+
+
+        this.hwTimer = new HashedWheelTimer(10, TimeUnit.MILLISECONDS); // tuning these params didn't matter much
+
+        this.requestSource = requestSource;
+        this.print = print;
+        this.addr = new InetSocketAddress(host, port);
+
+        this.connLimit = (int) (rps * CONNECTION_FACTOR);
         this.rps = rps;
-        this.host = host;
-        GET = ChannelBuffers.copiedBuffer(
-                "GET /my/app HTTP/1.1\n" +
-                        "Host: " + host + "\n" +
-                        "Connection: close\n" +
-                        "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0\n",
-                Charset.defaultCharset());
+        this.debug = debug;
 
         bootstrap = new ClientBootstrap(
                 new NioClientSocketChannelFactory(
@@ -54,95 +88,155 @@ public class StressClient {
 
         // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
+            @Override
             public ChannelPipeline getPipeline() throws Exception {
-                return Channels.pipeline(new StressClientHandler());
+                ChannelPipeline pipeline = Channels.pipeline();
+                if (readTimeoutMs > 0) {
+                    pipeline.addLast("readTimer",
+                            new ReadTimeoutHandler(timer, readTimeoutMs, TimeUnit.MILLISECONDS));
+                }
+                if (writeTimeoutMs > 0) {
+                    pipeline.addLast("writeTimer",
+                            new WriteTimeoutHandler(timer, writeTimeoutMs, TimeUnit.MILLISECONDS));
+                }
+                pipeline.addLast("stress", stressClientHandler);
+                return pipeline;
             }
         });
         //bootstrap.setOption("reuseAddress", "true");
     }
 
     public void start() {
-        int rateMicros = 1000000 / rps;
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
-            @Override
-            public void run() {
-                if (connected.get() < connLimit) {
-                    // counting connections here is not fully fair, but works!
-                    connected.incrementAndGet();
-                    ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, port));
+        System.out.printf("Started stress client `%s to `%s` with %,d rps%n", name, addr, rps);
 
-                    future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
-                        @Override
-                        public void operationComplete(ChannelFuture future) throws Exception {
-                            // by logic you should decrementing connections here, but.. it's not work
-                            // connected.decrementAndGet();
-                        }
-                    });
+        final int rateNanos = 1_000_000_000 / rps;
+        hwTimer.newTimeout(new TimerTask() {
+            @Override
+            public void run(Timeout timeout) throws Exception {
+                if (!timeout.isCancelled() && connected.get() < connLimit) {
+                    sendOne();
                 }
+                hwTimer.newTimeout(this, rateNanos, NANOSECONDS);
             }
-        }, 0, rateMicros, TimeUnit.MICROSECONDS);
+        }, rateNanos, NANOSECONDS);
 
-        Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable() {
+        statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                System.out.printf("%10s stat: connected=%5s, sent=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%s%n",
-                        name, connected.get(), sent.getAndSet(0), te.getAndSet(0), be.getAndSet(0), ce.getAndSet(0));
+                showStats();
+
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
 
-    public static void main(String[] args) {
-        String host = "localhost";
-        if (args.length > 0) {
-            host = args[0];
-        }
-        int port = 8080;
-        if (args.length > 1) {
-            port = Integer.parseInt(args[1]);
-        }
-
-        new StressClient("client1", host, port, 40_000, 40_000).start();
-//        new StressClient("client2", host, port, 30_000, 30_000).start();
+    private void showStats() {
+        int sentSoFar = sent.getAndSet(0);
+        total.addAndGet(sentSoFar);
+        System.out.printf("%10s STAT: connected=%5s, sent=%5s, received=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
+                name,
+                connected.get(),
+                sentSoFar,
+                received.getAndSet(0),
+                te.getAndSet(0),
+                be.getAndSet(0),
+                ce.getAndSet(0),
+                ie.getAndSet(0),
+                nn.getAndSet(0)
+        );
     }
 
+    private void sendOne() {
+        // counting connections here is not fully fair, but works!
+        connected.incrementAndGet();
+
+        ChannelFuture future = bootstrap.connect(addr);
+
+//                    future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
+//                        @Override
+//                        public void operationComplete(ChannelFuture future) throws Exception {
+//                            // by logic you should decrementing connections here, but.. it's not work
+//                            // connected.decrementAndGet();
+//                        }
+//                    });
+    }
+
+    public void stop() {
+        System.out.printf("client `%s` stopping...%n", name);
+        hwTimer.stop();
+        statExecutor.shutdownNow();
+        bootstrap.shutdown();
+    }
+
+    public static void main(String[] args) {
+        final String host = args.length > 0 ? args[0] : "localhost";
+        final int port = args.length > 1 ? Integer.parseInt(args[1]) : 8080;
+        final int rps = args.length > 2 ? Integer.parseInt(args[2]) : 30_000;
+
+        final String getRequest = "GET /my/app HTTP/1.1\n" +
+                "Host: " + String.format("%s:%s", host, port) + "\n" +
+                "Connection: close\n" +
+                "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0\n";
+
+        RequestSource<ChannelBuffer> singleGet = new RequestSource<ChannelBuffer>() {
+            @Override
+            public ChannelBuffer next() {
+                return ChannelBuffers.copiedBuffer("bla bla".getBytes());
+            }
+        };
+
+        //new StressClient(, 40_000).start();
+        new StressClient(host, port, singleGet, rps).start();
+    }
+
+    public int getSentTotal() {
+        return total.get();
+    }
 
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-            // the same here - decrementing connections here is not fully fair but works!
-            connected.decrementAndGet();
-            e.getChannel().close();
+            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
+            String startLabel = resp.readBytes(64).toString(Charset.defaultCharset());
+            if (startLabel.contains("HTTP/1.")) {
+                // the same here - decrementing connections here is not fully fair but works!
+                connected.decrementAndGet();
+                received.incrementAndGet();
+            }
+            if (print) {
+                System.out.println("\n" + startLabel + resp.toString(Charset.defaultCharset()));
+            }
         }
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
             // by logic you should count connection here, but in practice - it doesn't work
-//            connected.incrementAndGet();
-//            ctx.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
-//                @Override
-//                public void operationComplete(ChannelFuture future) throws Exception {
-//                    connected.decrementAndGet();
-//                }
-//            });
-
-            e.getChannel().write(GET);
+            // connected.incrementAndGet();
+            e.getChannel().write(requestSource.next());
             sent.incrementAndGet();
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
+            connected.decrementAndGet();
 
             Throwable exc = e.getCause();
 
-            if (exc instanceof ConnectTimeoutException) {
+            if (exc instanceof ConnectTimeoutException ||
+                    exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
                 be.incrementAndGet();
             } else if (exc instanceof ConnectException) {
                 ce.incrementAndGet();
+            } else if (exc instanceof IOException) {
+                ie.incrementAndGet();
             } else {
-                exc.printStackTrace();
+                nn.incrementAndGet();
+            }
+
+            if (debug) {
+                exc.printStackTrace(System.out);
             }
         }
     }
