@@ -52,7 +52,7 @@ public class CountingServer {
     }
 
     public void start() {
-        System.out.printf("started counting server on %s port with %,dms random delay", port, randomDelay);
+        System.out.printf("started counting server on %s port with %,dms random delay%n", port, randomDelay);
 
         // Configure the server.
         ServerBootstrap bootstrap = new ServerBootstrap(

@@ -9,8 +9,6 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.TimerTask;
 
 import java.io.IOException;
 import java.net.*;
@@ -70,7 +68,7 @@ public class StressClient {
         if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
 
-        this.hwTimer = new HashedWheelTimer(10, MICROSECONDS); // tuning these params didn't matter much
+        this.hwTimer = new HashedWheelTimer(100, MICROSECONDS); // tuning these params didn't matter much
 
         this.requestSource = requestSource;
         this.print = print;
@@ -114,31 +112,29 @@ public class StressClient {
 
     public void start() {
 
-        final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER);
+        final int delayMicro = (int) (1_000_000 / rps);
 
         System.out.printf("Started stress client `%s` to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
 
-        /*requestExecutor.schedule(new Runnable() {
+        requestExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                requestExecutor.schedule(this, delayMicro, MICROSECONDS);
-
-                if (!requestExecutor.isShutdown() *//*&& connected.get() < connLimit*//*) {
+                if (!requestExecutor.isShutdown()) {
                     sendOne();
                 }
             }
-        }, delayMicro, MICROSECONDS);*/
+        }, 0, delayMicro, MICROSECONDS);
 
-        hwTimer.newTimeout(new TimerTask() {
+        /*hwTimer.newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
                 hwTimer.newTimeout(this, delayMicro, MICROSECONDS);
 
-                if (!timeout.isCancelled() && connected.get() < connLimit) {
+                if (!timeout.isCancelled()) {
                     sendOne();
                 }
             }
-        }, delayMicro, MICROSECONDS);
+        }, delayMicro, MICROSECONDS);*/
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
