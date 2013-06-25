@@ -70,7 +70,7 @@ public class StressClient {
         if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
 
-        this.hwTimer = new HashedWheelTimer(100, TimeUnit.MILLISECONDS); // tuning these params didn't matter much
+        this.hwTimer = new HashedWheelTimer(1, TimeUnit.MILLISECONDS, 1024); // tuning these params didn't matter much
 
         this.requestSource = requestSource;
         this.print = print;

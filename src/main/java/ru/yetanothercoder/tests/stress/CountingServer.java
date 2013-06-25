@@ -17,6 +17,9 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.lang.Integer.parseInt;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
+
 /**
  * @author Mikhail Baturov, 4/22/13 12:02 PM
  */
@@ -44,10 +47,12 @@ public class CountingServer {
         this.delayUnit = delayUnit;
         this.randomDelay = randomDelay;
         this.port = port;
-        hwTimer = new HashedWheelTimer(10, TimeUnit.MILLISECONDS);
+        hwTimer = new HashedWheelTimer(10, MILLISECONDS);
     }
 
     public void start() {
+        System.out.printf("started counting server on %s port with %,dms random delay", port, randomDelay);
+
         // Configure the server.
         ServerBootstrap bootstrap = new ServerBootstrap(
                 new NioServerSocketChannelFactory(
@@ -108,12 +113,8 @@ public class CountingServer {
 
 
     public static void main(String[] args) throws Exception {
-        int port;
-        if (args.length > 0) {
-            port = Integer.parseInt(args[0]);
-        } else {
-            port = 8080;
-        }
-        new CountingServer(port).start();
+        final int port = args.length > 0 ? parseInt(args[1]) : 8080;
+        final int delay = args.length > 1 ? parseInt(args[2]) : 100;
+        new CountingServer(port, delay, MILLISECONDS).start();
     }
 }
