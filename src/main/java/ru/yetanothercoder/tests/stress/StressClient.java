@@ -57,9 +57,9 @@ public class StressClient {
     private final boolean debug;
 
     /**
-     * connection limit factor (limit=rps*factor), as tcp connection number is slightly greater than response number
+     * in practice, real rps was this times lower, seems due to jvm overhead
      */
-    private static final double RPS_IMPERICAL_FACTOR = 2;
+    private static final double RPS_IMPERICAL_MULTIPLIER = 2;
 
     public StressClient(String host, int port, RequestSource requestSource, int rps) {
         this(host, port, requestSource, rps, -1, -1, false, false);
@@ -77,7 +77,7 @@ public class StressClient {
         this.print = print;
         this.addr = new InetSocketAddress(host, port);
 
-        this.connLimit = (int) (rps * RPS_IMPERICAL_FACTOR);
+        this.connLimit = (int) (rps * RPS_IMPERICAL_MULTIPLIER);
         this.rps = rps;
         this.debug = debug;
 
@@ -108,7 +108,7 @@ public class StressClient {
 
     public void start() {
 
-        final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_FACTOR);
+        final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER);
 
         System.out.printf("Started stress client `%s to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
 
