@@ -13,10 +13,7 @@ import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
 
 import java.io.IOException;
-import java.net.BindException;
-import java.net.ConnectException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
+import java.net.*;
 import java.nio.charset.Charset;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -48,10 +45,12 @@ public class StressClient {
     private final AtomicInteger ce = new AtomicInteger(0);
     private final AtomicInteger ie = new AtomicInteger(0);
     private final AtomicInteger nn = new AtomicInteger(0);
-    private final String name = "Client#1";
+    private String name;
+
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ScheduledExecutorService requestExecutor = Executors.newSingleThreadScheduledExecutor();
+
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
@@ -71,7 +70,7 @@ public class StressClient {
         if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
 
-        this.hwTimer = new HashedWheelTimer(10, TimeUnit.MICROSECONDS, 1024); // tuning these params didn't matter much
+        this.hwTimer = new HashedWheelTimer(10, MICROSECONDS); // tuning these params didn't matter much
 
         this.requestSource = requestSource;
         this.print = print;
@@ -104,13 +103,20 @@ public class StressClient {
             }
         });
         //bootstrap.setOption("reuseAddress", "true");
+
+        name = "Client";
+        try {
+            name += "@" + InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            // ignore
+        }
     }
 
     public void start() {
 
         final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER);
 
-        System.out.printf("Started stress client `%s to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
+        System.out.printf("Started stress client `%s` to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
 
         /*requestExecutor.schedule(new Runnable() {
             @Override
@@ -146,8 +152,7 @@ public class StressClient {
     private void showStats() {
         int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
-        System.out.printf("%10s STAT: sent=%5s, received=%5s, connected=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
-                name,
+        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
                 sentSoFar,
                 received.getAndSet(0),
                 connected.getAndSet(0),
@@ -163,15 +168,7 @@ public class StressClient {
         // counting connections beforehand!
         connected.incrementAndGet();
 
-        ChannelFuture future = bootstrap.connect(addr);
-
-//                    future.getChannel().getCloseFuture().addListener(new ChannelFutureListener() {
-//                        @Override
-//                        public void operationComplete(ChannelFuture future) throws Exception {
-//                            // by logic you should decrementing connections here, but.. it's not work
-//                            // connected.decrementAndGet();
-//                        }
-//                    });
+        bootstrap.connect(addr);
     }
 
     public void stop() {
@@ -187,7 +184,6 @@ public class StressClient {
         final int port = args.length > 1 ? parseInt(args[1]) : 8080;
         final int rps = args.length > 2 ? parseInt(args[2]) : 1_000;
 
-        //new StressClient(, 40_000).start();
         final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, false);
         client.start();
 
@@ -207,21 +203,14 @@ public class StressClient {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
             ChannelBuffer resp = (ChannelBuffer) e.getMessage();
-            String startLabel = resp.readBytes(64).toString(Charset.defaultCharset());
-            if (startLabel.contains("HTTP/1.")) {
-                // the same here - decrementing connections here is not fully fair but works!
-//                connected.decrementAndGet();
-                received.incrementAndGet();
-            }
             if (print) {
-                System.out.println("\n" + startLabel + resp.toString(Charset.defaultCharset()));
+                System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
+            received.incrementAndGet();
         }
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-            // by logic you should count connection here, but in practice - it doesn't work
-            // connected.incrementAndGet();
             e.getChannel().write(requestSource.next());
             sent.incrementAndGet();
         }
@@ -229,7 +218,6 @@ public class StressClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
-//            connected.decrementAndGet();
 
             Throwable exc = e.getCause();
 
@@ -250,7 +238,7 @@ public class StressClient {
             }
 
             if (debug) {
-                exc.printStackTrace(System.out);
+                exc.printStackTrace(System.err);
             }
         }
     }
