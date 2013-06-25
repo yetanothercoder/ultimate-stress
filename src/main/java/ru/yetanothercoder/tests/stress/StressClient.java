@@ -51,6 +51,7 @@ public class StressClient {
     private final String name = "Client#1";
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService requestExecutor = Executors.newSingleThreadScheduledExecutor();
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
@@ -58,7 +59,7 @@ public class StressClient {
     /**
      * connection limit factor (limit=rps*factor), as tcp connection number is slightly greater than response number
      */
-    private static final double CONNECTION_LIMIT_FACTOR = 1.5;
+    private static final double RPS_IMPERICAL_FACTOR = 2;
 
     public StressClient(String host, int port, RequestSource requestSource, int rps) {
         this(host, port, requestSource, rps, -1, -1, false, false);
@@ -70,13 +71,13 @@ public class StressClient {
         if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
 
-        this.hwTimer = new HashedWheelTimer(1, TimeUnit.MILLISECONDS, 1024); // tuning these params didn't matter much
+        this.hwTimer = new HashedWheelTimer(10, TimeUnit.MICROSECONDS, 1024); // tuning these params didn't matter much
 
         this.requestSource = requestSource;
         this.print = print;
         this.addr = new InetSocketAddress(host, port);
 
-        this.connLimit = (int) (rps * CONNECTION_LIMIT_FACTOR);
+        this.connLimit = (int) (rps * RPS_IMPERICAL_FACTOR);
         this.rps = rps;
         this.debug = debug;
 
@@ -106,18 +107,32 @@ public class StressClient {
     }
 
     public void start() {
-        System.out.printf("Started stress client `%s to `%s` with %,d rps%n", name, addr, rps);
 
-        final int rateMicros = 1_000_000 / rps;
+        final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_FACTOR);
+
+        System.out.printf("Started stress client `%s to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
+
+        /*requestExecutor.schedule(new Runnable() {
+            @Override
+            public void run() {
+                requestExecutor.schedule(this, delayMicro, MICROSECONDS);
+
+                if (!requestExecutor.isShutdown() *//*&& connected.get() < connLimit*//*) {
+                    sendOne();
+                }
+            }
+        }, delayMicro, MICROSECONDS);*/
+
         hwTimer.newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
+                hwTimer.newTimeout(this, delayMicro, MICROSECONDS);
+
                 if (!timeout.isCancelled() && connected.get() < connLimit) {
                     sendOne();
                 }
-                hwTimer.newTimeout(this, rateMicros, MICROSECONDS);
             }
-        }, rateMicros, MICROSECONDS);
+        }, delayMicro, MICROSECONDS);
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -131,11 +146,11 @@ public class StressClient {
     private void showStats() {
         int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
-        System.out.printf("%10s STAT: connected=%5s, sent=%5s, received=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
+        System.out.printf("%10s STAT: sent=%5s, received=%5s, connected=%5s, ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
                 name,
-                connected.get(),
                 sentSoFar,
                 received.getAndSet(0),
+                connected.getAndSet(0),
                 te.getAndSet(0),
                 be.getAndSet(0),
                 ce.getAndSet(0),
@@ -162,6 +177,7 @@ public class StressClient {
     public void stop() {
         System.out.printf("client `%s` stopping...%n", name);
         hwTimer.stop();
+        requestExecutor.shutdownNow();
         statExecutor.shutdownNow();
         bootstrap.shutdown();
     }
@@ -172,7 +188,7 @@ public class StressClient {
         final int rps = args.length > 2 ? parseInt(args[2]) : 1_000;
 
         //new StressClient(, 40_000).start();
-        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps);
+        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, false);
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -194,7 +210,7 @@ public class StressClient {
             String startLabel = resp.readBytes(64).toString(Charset.defaultCharset());
             if (startLabel.contains("HTTP/1.")) {
                 // the same here - decrementing connections here is not fully fair but works!
-                connected.decrementAndGet();
+//                connected.decrementAndGet();
                 received.incrementAndGet();
             }
             if (print) {
@@ -213,7 +229,7 @@ public class StressClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
-            connected.decrementAndGet();
+//            connected.decrementAndGet();
 
             Throwable exc = e.getCause();
 
@@ -221,7 +237,10 @@ public class StressClient {
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
-                be.incrementAndGet();
+                if (be.incrementAndGet() % 50 == 0) {
+                    System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now)%n", rps);
+                }
+
             } else if (exc instanceof ConnectException) {
                 ce.incrementAndGet();
             } else if (exc instanceof IOException) {

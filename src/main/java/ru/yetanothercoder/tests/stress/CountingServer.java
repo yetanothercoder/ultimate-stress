@@ -26,6 +26,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class CountingServer {
 
     private final AtomicInteger received = new AtomicInteger(0);
+    private final AtomicInteger errors = new AtomicInteger(0);
 
     public static final ChannelBuffer RESP204 = ChannelBuffers.copiedBuffer(
             "HTTP/1.1 204 No Content\n" +
@@ -75,13 +76,11 @@ public class CountingServer {
             public void run() {
                 int perSecond = received.getAndSet(0);
                 if (perSecond > 0) {
-                    System.out.printf("received: %s rps%n", perSecond);
+                    System.out.printf("received: %,d rps, errors: %,d%n", perSecond, errors.getAndSet(0));
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
     }
-
-
 
 
     private class CountingHandler extends SimpleChannelUpstreamHandler {
@@ -92,29 +91,39 @@ public class CountingServer {
             ChannelBuffer message = (ChannelBuffer) e.getMessage();
             //System.out.println("received:\n" + new String(message.array()));
 
+            final Channel channel = e.getChannel();
+
             if (randomDelay > 0) {
                 int delay = r.nextInt(randomDelay);
+
                 hwTimer.newTimeout(new TimerTask() {
                     @Override
                     public void run(Timeout timeout) throws Exception {
-                        writeAnswer(e);
+                        if (!timeout.isCancelled() && channel.isOpen()) {
+                            writeAnswer(channel);
+                        }
                     }
                 }, delay, delayUnit);
             } else {
-                writeAnswer(e);
+                writeAnswer(channel);
             }
         }
 
-        private void writeAnswer(MessageEvent e) {
-            e.getChannel().write(RESP204);
-            e.getChannel().close();
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+            errors.incrementAndGet();
+            super.exceptionCaught(ctx, e);
+        }
+
+        private void writeAnswer(Channel channel) {
+            channel.write(RESP204).addListener(ChannelFutureListener.CLOSE);
         }
     }
 
 
     public static void main(String[] args) throws Exception {
-        final int port = args.length > 0 ? parseInt(args[1]) : 8080;
-        final int delay = args.length > 1 ? parseInt(args[2]) : 100;
+        final int port = args.length > 0 ? parseInt(args[0]) : 8080;
+        final int delay = args.length > 1 ? parseInt(args[1]) : -1;
         new CountingServer(port, delay, MILLISECONDS).start();
     }
 }
