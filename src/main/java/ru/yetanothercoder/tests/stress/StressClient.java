@@ -9,8 +9,6 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.TimerTask;
 
 import java.io.IOException;
 import java.net.*;
@@ -20,7 +18,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.lang.Integer.parseInt;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -46,9 +43,6 @@ public class StressClient {
     private final AtomicInteger ie = new AtomicInteger(0);
     private final AtomicInteger nn = new AtomicInteger(0);
     private String name;
-
-    private final AtomicInteger dynamicDelay = new AtomicInteger(0);
-    private final AtomicInteger tuningFactor = new AtomicInteger(1);
 
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
@@ -118,29 +112,30 @@ public class StressClient {
     public void start() {
 
         final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER);
-        dynamicDelay.set(delayMicro);
 
         System.out.printf("Started stress client `%s` to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
 
-        /*requestExecutor.scheduleAtFixedRate(new Runnable() {
+        requestExecutor.schedule(new Runnable() {
             @Override
             public void run() {
+                requestExecutor.schedule(this, delayMicro, MICROSECONDS);
+
                 if (!requestExecutor.isShutdown()) {
                     sendOne();
                 }
             }
-        }, 0, delayMicro, MICROSECONDS);*/
+        }, delayMicro, MICROSECONDS);
 
-        hwTimer.newTimeout(new TimerTask() {
+        /*hwTimer.newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
-                hwTimer.newTimeout(this, dynamicDelay.get(), MICROSECONDS);
+                hwTimer.newTimeout(this, delayMicro, MICROSECONDS);
 
                 if (!timeout.isCancelled()) {
                     sendOne();
                 }
             }
-        }, dynamicDelay.get(), MICROSECONDS);
+        }, delayMicro, MICROSECONDS);*/
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -154,7 +149,7 @@ public class StressClient {
     private void showStats() {
         int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
-        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s, tf=%s%n",
+        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
                 sentSoFar,
                 received.getAndSet(0),
                 connected.getAndSet(0),
@@ -162,7 +157,7 @@ public class StressClient {
                 be.getAndSet(0),
                 ce.getAndSet(0),
                 ie.getAndSet(0),
-                nn.getAndSet(0), tuningFactor.get()
+                nn.getAndSet(0)
         );
     }
 
@@ -170,7 +165,19 @@ public class StressClient {
         // counting connections beforehand!
         connected.incrementAndGet();
 
-        bootstrap.connect(addr);
+        try {
+            ChannelFuture future = bootstrap.connect(addr);
+        } catch (ChannelException e) {
+            if (e.getCause() instanceof SocketException) {
+                countPortErrorsOrExit(e.getCause());
+            } else {
+                nn.incrementAndGet();
+            }
+            if (debug) {
+                e.printStackTrace(System.err);
+            }
+        }
+
     }
 
     public void stop() {
@@ -182,9 +189,9 @@ public class StressClient {
     }
 
     public static void main(String[] args) {
-        final String host = args.length > 0 ? args[0] : "localhost";
-        final int port = args.length > 1 ? parseInt(args[1]) : 8080;
-        final int rps = args.length > 2 ? parseInt(args[2]) : 1_000;
+        final String host = System.getProperty("host", "localhost");
+        final int port = Integer.valueOf(System.getProperty("port",  "8080"));
+        final int rps = Integer.valueOf(System.getProperty("rps", "1_000"));
 
         final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, false);
         client.start();
@@ -227,13 +234,7 @@ public class StressClient {
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
-                if (be.incrementAndGet() % 50 == 0) {
-                    System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now)%n", rps);
-                }
-
-                int newFactor = tuningFactor.get() * 2;
-                dynamicDelay.getAndAdd(tuningFactor.getAndSet(newFactor));
-
+                countPortErrorsOrExit(exc);
             } else if (exc instanceof ConnectException) {
                 ce.incrementAndGet();
             } else if (exc instanceof IOException) {
@@ -245,6 +246,14 @@ public class StressClient {
             if (debug) {
                 exc.printStackTrace(System.err);
             }
+        }
+    }
+
+    private void countPortErrorsOrExit(Throwable e) {
+        if (be.incrementAndGet() % 50 == 0) {
+            System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now)%n", rps);
+            e.printStackTrace(System.err);
+            System.exit(1);
         }
     }
 }

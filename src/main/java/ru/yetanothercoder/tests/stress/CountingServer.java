@@ -17,7 +17,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.lang.Integer.parseInt;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 /**
@@ -122,8 +121,9 @@ public class CountingServer {
 
 
     public static void main(String[] args) throws Exception {
-        final int port = args.length > 0 ? parseInt(args[0]) : 8080;
-        final int delay = args.length > 1 ? parseInt(args[1]) : -1;
+        final int port = Integer.valueOf(System.getProperty("port",  "8080"));
+        final int delay = Integer.valueOf(System.getProperty("delay",  "-1"));
+
         new CountingServer(port, delay, MILLISECONDS).start();
     }
 }
