@@ -51,7 +51,7 @@ public class CountingServer {
     }
 
     public void start() {
-        System.out.printf("started counting server on %s port with %,dms random delay%n", port, randomDelay);
+        System.out.printf("SERVER: started counting server on %s port with %,dms random delay%n", port, randomDelay);
 
         // Configure the server.
         ServerBootstrap bootstrap = new ServerBootstrap(
@@ -75,7 +75,7 @@ public class CountingServer {
             public void run() {
                 int perSecond = received.getAndSet(0);
                 if (perSecond > 0) {
-                    System.out.printf("received: %,d rps, errors: %,d%n", perSecond, errors.getAndSet(0));
+                    System.out.printf("SERVER: received %,d rps, errors: %,d%n", perSecond, errors.getAndSet(0));
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
@@ -111,7 +111,7 @@ public class CountingServer {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             errors.incrementAndGet();
-            super.exceptionCaught(ctx, e);
+            //super.exceptionCaught(ctx, e);
         }
 
         private void writeAnswer(Channel channel) {

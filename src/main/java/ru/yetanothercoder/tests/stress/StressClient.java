@@ -9,6 +9,8 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
+import ru.yetanothercoder.tests.stress.timer.HashedWheelScheduler;
+import ru.yetanothercoder.tests.stress.timer.Scheduler;
 
 import java.io.IOException;
 import java.net.*;
@@ -18,7 +20,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.util.concurrent.TimeUnit.MICROSECONDS;
+import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
@@ -46,11 +48,13 @@ public class StressClient {
 
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ScheduledExecutorService requestExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final Scheduler scheduler;
+    private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
+    private final AtomicInteger mode = new AtomicInteger(0);
 
     /**
      * in practice, real rps was this times lower, seems due to jvm overhead
@@ -64,10 +68,10 @@ public class StressClient {
     public StressClient(String host, int port, RequestSource requestSource, int rps,
                         final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
 
-        if (rps >= 1_000_000) throw new IllegalArgumentException("rps<=1M!");
+        if (rps > 1_000_000) throw new IllegalArgumentException("rps<=1M!");
 
-
-        this.hwTimer = new HashedWheelTimer(10, MICROSECONDS, 1024); // tuning these params didn't matter much
+        this.scheduler = new HashedWheelScheduler();
+        this.hwTimer = new HashedWheelTimer();
 
         this.requestSource = requestSource;
         this.print = print;
@@ -89,11 +93,11 @@ public class StressClient {
                 ChannelPipeline pipeline = Channels.pipeline();
                 if (readTimeoutMs > 0) {
                     pipeline.addLast("readTimer",
-                            new ReadTimeoutHandler(hwTimer, readTimeoutMs, TimeUnit.MILLISECONDS));
+                            new ReadTimeoutHandler(hwTimer, readTimeoutMs, MILLISECONDS));
                 }
                 if (writeTimeoutMs > 0) {
                     pipeline.addLast("writeTimer",
-                            new WriteTimeoutHandler(hwTimer, writeTimeoutMs, TimeUnit.MILLISECONDS));
+                            new WriteTimeoutHandler(hwTimer, writeTimeoutMs, MILLISECONDS));
                 }
                 pipeline.addLast("stress", stressClientHandler);
                 return pipeline;
@@ -111,31 +115,17 @@ public class StressClient {
 
     public void start() {
 
-        final int delayMicro = (int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER);
+        if (rps > 0) {
+            dynamicRate.set((int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER));
+        }
+        System.out.printf("Started stress client `%s` to `%s` with %,d rps (rate=%,d micros)%n", name, addr, rps, dynamicRate.get());
 
-        System.out.printf("Started stress client `%s` to `%s` with %,d rps (%,d micros between requests)%n", name, addr, rps, delayMicro);
-
-        requestExecutor.schedule(new Runnable() {
+        scheduler.startAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                requestExecutor.schedule(this, delayMicro, MICROSECONDS);
-
-                if (!requestExecutor.isShutdown()) {
-                    sendOne();
-                }
+                if (mode.get() == 0) sendOne();
             }
-        }, delayMicro, MICROSECONDS);
-
-        /*hwTimer.newTimeout(new TimerTask() {
-            @Override
-            public void run(Timeout timeout) throws Exception {
-                hwTimer.newTimeout(this, delayMicro, MICROSECONDS);
-
-                if (!timeout.isCancelled()) {
-                    sendOne();
-                }
-            }
-        }, delayMicro, MICROSECONDS);*/
+        }, dynamicRate);
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -147,12 +137,19 @@ public class StressClient {
     }
 
     private void showStats() {
+        int conn = connected.get();
+        if (dynamicRate.get() > 1 || rps > 0) {
+            /*if (be.get() > 50) {
+                dynamicRate.set((int) (dynamicRate.get() * 1.2));
+            }*/
+            connected.set(0);
+        }
         int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
-        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
+        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s, rate=%3s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
                 sentSoFar,
                 received.getAndSet(0),
-                connected.getAndSet(0),
+                conn, dynamicRate.get(),
                 te.getAndSet(0),
                 be.getAndSet(0),
                 ce.getAndSet(0),
@@ -183,15 +180,21 @@ public class StressClient {
     public void stop() {
         System.out.printf("client `%s` stopping...%n", name);
         hwTimer.stop();
-        requestExecutor.shutdownNow();
+        scheduler.shutdown();
         statExecutor.shutdownNow();
         bootstrap.shutdown();
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         final String host = System.getProperty("host", "localhost");
-        final int port = Integer.valueOf(System.getProperty("port",  "8080"));
-        final int rps = Integer.valueOf(System.getProperty("rps", "1_000"));
+        final int port = Integer.valueOf(System.getProperty("port", "8080"));
+        final int rps = Integer.valueOf(System.getProperty("rps", "-1"));
+        final boolean server = System.getProperty("server") != null;
+
+        if (server) {
+            new CountingServer(port, 100, MILLISECONDS).start();
+            TimeUnit.SECONDS.sleep(2);
+        }
 
         final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, false);
         client.start();
@@ -216,6 +219,7 @@ public class StressClient {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
             received.incrementAndGet();
+//            connected.decrementAndGet();
         }
 
         @Override
@@ -227,6 +231,7 @@ public class StressClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
+            //connected.decrementAndGet();
 
             Throwable exc = e.getCause();
 
@@ -250,10 +255,39 @@ public class StressClient {
     }
 
     private void countPortErrorsOrExit(Throwable e) {
-        if (be.incrementAndGet() % 50 == 0) {
-            System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now)%n", rps);
-            e.printStackTrace(System.err);
-            System.exit(1);
+//        if (be.incrementAndGet() > 0) {
+        mode.set(1);
+        int conn = connected.get();
+//            final int connectedNow = connected.get();
+
+//            int max = Math.max(Math.max(connected.get(), received.get()), sent.get());
+
+        System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now), max: %,d%n", rps, conn);
+        //e.printStackTrace(System.err);
+
+
+        int newRate;
+        if (dynamicRate.get() > 1 || rps > 0) {
+            // just tune
+            newRate = (int) (1.1 * dynamicRate.get());
+            newRate = Math.max(newRate, dynamicRate.get() + 1);
+        } else {
+            // set initial value
+            newRate = (int) (1_000_000 / conn);
         }
+
+        dynamicRate.set(newRate);
+        int newRps = (int) ((1_000_000 / newRate) / RPS_IMPERICAL_MULTIPLIER);
+        System.out.printf("new rps: %,d%n", newRps);
+
+
+        statExecutor.schedule(new Runnable() {
+            @Override
+            public void run() {
+                mode.set(0);
+            }
+        }, 3, SECONDS);
+//            System.exit(1);
+//        }
     }
 }
