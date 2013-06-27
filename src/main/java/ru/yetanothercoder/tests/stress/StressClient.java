@@ -214,6 +214,11 @@ public class StressClient {
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+            if (mode.get() > 0) {
+                e.getChannel().close();
+                return;
+            }
+
             ChannelBuffer resp = (ChannelBuffer) e.getMessage();
             if (print) {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
@@ -224,6 +229,11 @@ public class StressClient {
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
+            if (mode.get() > 0) {
+                e.getChannel().close();
+                return;
+            }
+
             e.getChannel().write(requestSource.next());
             sent.incrementAndGet();
         }
@@ -269,11 +279,11 @@ public class StressClient {
         int newRate;
         if (dynamicRate.get() > 1 || rps > 0) {
             // just tune
-            newRate = (int) (1.1 * dynamicRate.get());
+            newRate = (int) (1.2 * dynamicRate.get());
             newRate = Math.max(newRate, dynamicRate.get() + 1);
         } else {
             // set initial value
-            newRate = (int) (1_000_000 / conn);
+            newRate = (int) (1.2 * 1_000_000 / conn);
         }
 
         dynamicRate.set(newRate);
