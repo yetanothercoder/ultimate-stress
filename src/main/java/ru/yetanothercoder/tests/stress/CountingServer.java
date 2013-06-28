@@ -122,7 +122,7 @@ public class CountingServer {
 
     public static void main(String[] args) throws Exception {
         final int port = Integer.valueOf(System.getProperty("port",  "8080"));
-        final int delay = Integer.valueOf(System.getProperty("delay",  "-1"));
+        final int delay = Integer.valueOf(System.getProperty("delay",  "100"));
 
         new CountingServer(port, delay, MILLISECONDS).start();
     }

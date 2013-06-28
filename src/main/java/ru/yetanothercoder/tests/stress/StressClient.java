@@ -62,7 +62,7 @@ public class StressClient {
     /**
      * in practice, real rps was this times lower, seems due to jvm overhead
      */
-    private static final double RPS_IMPERICAL_MULTIPLIER = 2;
+    private static final double RPS_IMPERICAL_MULTIPLIER = 1;
 
     public StressClient(String host, int port, RequestSource requestSource, int rps) {
         this(host, port, requestSource, rps, -1, -1, false, false);
@@ -260,9 +260,11 @@ public class StressClient {
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
+                be.incrementAndGet();
                 countPortErrorsOrExit(exc);
             } else if (exc instanceof ConnectException) {
                 ce.incrementAndGet();
+                countPortErrorsOrExit(exc);
             } else if (exc instanceof IOException) {
                 ie.incrementAndGet();
             } else {
@@ -276,6 +278,8 @@ public class StressClient {
     }
 
     private void countPortErrorsOrExit(Throwable e) {
+        if (dynamicRate.get() > 1 && (be.get() < 50 || ce.get() < 50)) return;
+
 //        if (be.incrementAndGet() > 0) {
         mode.set(1);
         int conn = connected.get();
