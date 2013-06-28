@@ -294,7 +294,7 @@ public class StressClient {
             newRate = Math.max(newRate, dynamicRate.get() + 1);
         } else {
             // set initial value
-            newRate = (int) (1_000_000 / conn);
+            newRate = (int) (1000000 / conn);
         }
 
         dynamicRate.set(newRate);
