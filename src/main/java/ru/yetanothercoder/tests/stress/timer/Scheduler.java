@@ -7,5 +7,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public interface Scheduler {
     void startAtFixedRate(Runnable task, AtomicInteger rateMicro);
+    void executeNow(Runnable task);
     void shutdown();
 }

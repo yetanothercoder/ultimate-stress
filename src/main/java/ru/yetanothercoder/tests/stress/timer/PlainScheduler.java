@@ -32,6 +32,13 @@ public class PlainScheduler implements Scheduler {
     }
 
     @Override
+    public void executeNow(Runnable task) {
+        if (executor.isShutdown()) return;
+
+        executor.execute(task);
+    }
+
+    @Override
     public void shutdown() {
         executor.shutdownNow();
     }

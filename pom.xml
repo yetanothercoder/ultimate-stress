@@ -5,9 +5,45 @@
     <groupId>ru.yetanothercoder.tests</groupId>
     <artifactId>stress</artifactId>
     <version>0.7-SNAPSHOT</version>
-    <packaging>pom</packaging>
+    <packaging>jar</packaging>
     <name>Netty Stress Tool</name>
     <description>HTTP Stress Tool based on Netty</description>
+
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- This is for building it as single jar: $ mvn clean assembly:single -->
+                <artifactId>maven-assembly-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>ru.yetanothercoder.tests.stress.StressClient</mainClass>
+                        </manifest>
+                    </archive>
+                    <descriptorRefs>
+                        <descriptorRef>jar-with-dependencies</descriptorRef>
+                    </descriptorRefs>
+                </configuration>
+            </plugin>
+        </plugins>
+
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>2.3.2</version>
+                    <configuration>
+                        <source>1.6</source>
+                        <target>1.6</target>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+
 
     <dependencies>
         <dependency>

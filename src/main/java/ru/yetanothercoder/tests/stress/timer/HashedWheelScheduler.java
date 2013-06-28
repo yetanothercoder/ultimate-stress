@@ -4,6 +4,7 @@ import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
 
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
@@ -26,6 +27,18 @@ public class HashedWheelScheduler implements Scheduler {
                 task.run();
             }
         }, rateMicro.get(), MICROSECONDS);
+    }
+
+    @Override
+    public void executeNow(final Runnable task) {
+        hwTimer.newTimeout(new TimerTask() {
+            @Override
+            public void run(Timeout timeout) throws Exception {
+                if (timeout.isCancelled()) return;
+
+                task.run();
+            }
+        }, 0, TimeUnit.MICROSECONDS);
     }
 
     @Override
