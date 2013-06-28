@@ -15,6 +15,7 @@ import ru.yetanothercoder.tests.stress.timer.Scheduler;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
+ * TODO: 1. check connectivity before start 2. count connection refused exceptions
  * TCP/IP Stress Client based on Netty
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
@@ -48,6 +50,7 @@ public class StressClient {
 
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService requestExecutor = Executors.newCachedThreadPool();
     private final Scheduler scheduler;
     private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
@@ -68,7 +71,7 @@ public class StressClient {
     public StressClient(String host, int port, RequestSource requestSource, int rps,
                         final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
 
-        if (rps > 1_000_000) throw new IllegalArgumentException("rps<=1M!");
+        if (rps > 1000000) throw new IllegalArgumentException("rps<=1M!");
 
         this.scheduler = new HashedWheelScheduler();
         this.hwTimer = new HashedWheelTimer();
@@ -116,9 +119,9 @@ public class StressClient {
     public void start() {
 
         if (rps > 0) {
-            dynamicRate.set((int) (1_000_000 / rps / RPS_IMPERICAL_MULTIPLIER));
+            dynamicRate.set((int) (1000000 / rps / RPS_IMPERICAL_MULTIPLIER));
         }
-        System.out.printf("Started stress client `%s` to `%s` with %,d rps (rate=%,d micros)%n", name, addr, rps, dynamicRate.get());
+        System.out.printf("Started stress client `%s` to `%s` with %d rps (rate=%,d micros)%n", name, addr, rps, dynamicRate.get());
 
         scheduler.startAtFixedRate(new Runnable() {
             @Override
@@ -160,10 +163,11 @@ public class StressClient {
 
     private void sendOne() {
         // counting connections beforehand!
-        connected.incrementAndGet();
+//        connected.incrementAndGet();
 
         try {
             ChannelFuture future = bootstrap.connect(addr);
+            connected.incrementAndGet();
         } catch (ChannelException e) {
             if (e.getCause() instanceof SocketException) {
                 countPortErrorsOrExit(e.getCause());
@@ -179,8 +183,9 @@ public class StressClient {
 
     public void stop() {
         System.out.printf("client `%s` stopping...%n", name);
-        hwTimer.stop();
+        requestExecutor.shutdownNow();
         scheduler.shutdown();
+        hwTimer.stop();
         statExecutor.shutdownNow();
         bootstrap.shutdown();
     }
@@ -190,13 +195,14 @@ public class StressClient {
         final int port = Integer.valueOf(System.getProperty("port", "8080"));
         final int rps = Integer.valueOf(System.getProperty("rps", "-1"));
         final boolean server = System.getProperty("server") != null;
+        final boolean debug = System.getProperty("debug") != null;
 
         if (server) {
             new CountingServer(port, 100, MILLISECONDS).start();
             TimeUnit.SECONDS.sleep(2);
         }
 
-        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, false);
+        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, debug);
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -223,8 +229,14 @@ public class StressClient {
         }
 
         @Override
-        public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-            e.getChannel().write(requestSource.next());
+        public void channelConnected(ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
+            requestExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    e.getChannel().write(requestSource.next());
+                }
+            });
+
             sent.incrementAndGet();
         }
 
@@ -262,7 +274,7 @@ public class StressClient {
 
 //            int max = Math.max(Math.max(connected.get(), received.get()), sent.get());
 
-        System.err.printf("ERROR: not enough ports! You should decrease rps(=%,d now), max: %,d%n", rps, conn);
+        System.err.printf("ERROR: not enough ports! You should decrease rps(=%d now), max: %,d%n", rps, conn);
         //e.printStackTrace(System.err);
 
 
@@ -273,12 +285,12 @@ public class StressClient {
             newRate = Math.max(newRate, dynamicRate.get() + 1);
         } else {
             // set initial value
-            newRate = (int) (1_000_000 / conn);
+            newRate = (int) (1000000 / conn);
         }
 
         dynamicRate.set(newRate);
-        int newRps = (int) ((1_000_000 / newRate) / RPS_IMPERICAL_MULTIPLIER);
-        System.out.printf("new rps: %,d%n", newRps);
+        int newRps = (int) ((1000000 / newRate) / RPS_IMPERICAL_MULTIPLIER);
+        System.out.printf("new rps: %d%n", newRps);
 
 
         statExecutor.schedule(new Runnable() {

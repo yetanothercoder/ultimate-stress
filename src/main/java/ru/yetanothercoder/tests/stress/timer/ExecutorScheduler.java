@@ -27,6 +27,13 @@ public class ExecutorScheduler implements Scheduler {
     }
 
     @Override
+    public void executeNow(Runnable task) {
+        if (requestExecutor.isShutdown()) return;
+
+        requestExecutor.execute(task);
+    }
+
+    @Override
     public void shutdown() {
         requestExecutor.shutdownNow();
     }
