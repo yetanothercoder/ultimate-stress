@@ -19,14 +19,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ConnectionLimitFinder implements Callable<Integer> {
     private final ClientBootstrap bootstrap;
     private final ChannelHandler handler = new ErrorHandler();
-    private final AtomicInteger connected = new AtomicInteger(0);
+    public final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger errors = new AtomicInteger(0);
     private final String host;
     private final int port;
     private final boolean debug;
-    private volatile boolean stop = false;
+    public volatile boolean stop = false;
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    private final ChannelGroup opened = new DefaultChannelGroup();
+    public final ChannelGroup opened = new DefaultChannelGroup();
 
     public ConnectionLimitFinder(String host, int port) {
         this.host = host;
@@ -96,8 +96,24 @@ public class ConnectionLimitFinder implements Callable<Integer> {
 
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
-        ConnectionLimitFinder finder = new ConnectionLimitFinder("localhost", 8080);
+        final ConnectionLimitFinder finder = new ConnectionLimitFinder("localhost", 8080);
+
+        /*Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                finder.stop = true;
+                finder.opened.close();
+                if (e instanceof InternalError && e.getCause() instanceof FileNotFoundException) {
+                    finder.stop = true;
+                    System.out.printf("%d connected, vm error: %s%n", finder.connected.get(), e.getCause().getMessage());
+                    e.printStackTrace(System.err);
+                }
+            }
+        });*/
+
+
         ExecutorService exec = Executors.newSingleThreadExecutor();
+
         long start = System.currentTimeMillis();
         Future<Integer> result = exec.submit(finder);
         int max = result.get();

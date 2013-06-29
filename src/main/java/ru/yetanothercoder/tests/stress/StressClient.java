@@ -9,7 +9,7 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import ru.yetanothercoder.tests.stress.timer.HashedWheelScheduler;
+import ru.yetanothercoder.tests.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.tests.stress.timer.Scheduler;
 
 import java.io.IOException;
@@ -75,7 +75,7 @@ public class StressClient {
 
         if (rps > 1000000) throw new IllegalArgumentException("rps<=1M!");
 
-        this.scheduler = new HashedWheelScheduler();
+        this.scheduler = new ExecutorScheduler();
         this.hwTimer = new HashedWheelTimer();
 
         this.requestSource = requestSource;
@@ -308,7 +308,9 @@ public class StressClient {
     }
 
     private void countPortErrorsOrExit(Throwable e) {
-        if (dynamicRate.get() > 1 && (be.get() < 50 || ce.get() < 50)) return;
+        if (dynamicRate.get() > 1 && (be.get() + ce.get() < 10)) return;
+
+//        e.printStackTrace(System.err);
 
 //        if (be.incrementAndGet() > 0) {
         mode.set(1);
