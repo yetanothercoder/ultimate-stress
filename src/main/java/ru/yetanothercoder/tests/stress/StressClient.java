@@ -63,6 +63,8 @@ public class StressClient {
      * in practice, real rps was this times lower, seems due to jvm overhead
      */
     private static final double RPS_IMPERICAL_MULTIPLIER = 1;
+    private final String host;
+    private final int port;
 
     public StressClient(String host, int port, RequestSource requestSource, int rps) {
         this(host, port, requestSource, rps, -1, -1, false, false);
@@ -78,6 +80,8 @@ public class StressClient {
 
         this.requestSource = requestSource;
         this.print = print;
+        this.host = host;
+        this.port = port;
         this.addr = new InetSocketAddress(host, port);
 
         this.connLimit = (int) (rps * RPS_IMPERICAL_MULTIPLIER);
@@ -117,6 +121,11 @@ public class StressClient {
     }
 
     public void start() {
+        if (!checkConnection()) {
+            System.err.printf("ERROR: no connection to %s:%d", host, port);
+            System.exit(0);
+        }
+
 
         if (rps > 0) {
             dynamicRate.set((int) (1000000 / rps / RPS_IMPERICAL_MULTIPLIER));
@@ -137,6 +146,27 @@ public class StressClient {
 
             }
         }, 0, 1, SECONDS);
+    }
+
+    private boolean checkConnection() {
+        Socket socket = null;
+
+        // java 6 style to handle such errors >>
+        try {
+            socket = new Socket(host, port);
+            return socket.isConnected();
+        } catch (IOException e) {
+            // ignore
+        } finally {
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    // ignore
+                }
+            }
+        }
+        return false;
     }
 
     private void showStats() {
