@@ -2,6 +2,8 @@ package ru.yetanothercoder.tests.stress;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.*;
+import org.jboss.netty.channel.group.ChannelGroup;
+import org.jboss.netty.channel.group.DefaultChannelGroup;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 
 import java.net.BindException;
@@ -24,6 +26,7 @@ public class ConnectionLimitFinder implements Callable<Integer> {
     private final boolean debug;
     private volatile boolean stop = false;
     private final ExecutorService executor = Executors.newCachedThreadPool();
+    private final ChannelGroup opened = new DefaultChannelGroup();
 
     public ConnectionLimitFinder(String host, int port) {
         this.host = host;
@@ -57,15 +60,18 @@ public class ConnectionLimitFinder implements Callable<Integer> {
         while (!Thread.currentThread().isInterrupted() && !stop) {
             try {
                 ChannelFuture future = bootstrap.connect(addr);
-                connected.incrementAndGet();
+                if (connected.incrementAndGet() % 1000 == 0) {
+                    System.out.println(connected.get());
+                }
             } catch (ChannelException e) {
                 if (e.getCause() instanceof SocketException) {
                     stop = handleLimitErrors(e.getCause());
                 }
             }
 
-            TimeUnit.MICROSECONDS.sleep(1);
+//            TimeUnit.MICROSECONDS.sleep(1);
         }
+        opened.close();
         executor.shutdownNow();
         bootstrap.shutdown();
         return connected.get();
@@ -74,13 +80,13 @@ public class ConnectionLimitFinder implements Callable<Integer> {
     private class ErrorHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
-            e.getChannel().close();
+            opened.add(e.getChannel());
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             Throwable exc = e.getCause();
-            e.getChannel().close();
+//            e.getChannel().close();
 
             if (exc instanceof BindException || exc instanceof ConnectException) {
                 stop = handleLimitErrors(exc);
