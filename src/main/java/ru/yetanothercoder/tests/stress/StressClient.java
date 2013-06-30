@@ -122,7 +122,7 @@ public class StressClient {
 
     public void start() {
         if (!checkConnection()) {
-            System.err.printf("ERROR: no connection to %s:%d", host, port);
+            System.err.printf("ERROR: no connection to %s:%d%n", host, port);
             System.exit(0);
         }
 
