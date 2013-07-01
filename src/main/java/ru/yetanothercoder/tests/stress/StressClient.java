@@ -10,6 +10,8 @@ import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import ru.yetanothercoder.tests.stress.timer.ExecutorScheduler;
+import ru.yetanothercoder.tests.stress.timer.HashedWheelScheduler;
+import ru.yetanothercoder.tests.stress.timer.PlainScheduler;
 import ru.yetanothercoder.tests.stress.timer.Scheduler;
 
 import java.io.IOException;
@@ -67,15 +69,23 @@ public class StressClient {
     private final int port;
 
     public StressClient(String host, int port, RequestSource requestSource, int rps) {
-        this(host, port, requestSource, rps, -1, -1, false, false);
+        this(host, port, requestSource, rps, -1, -1, -1, false, false);
     }
 
-    public StressClient(String host, int port, RequestSource requestSource, int rps,
+    public StressClient(String host, int port, RequestSource requestSource, int rps, int exec,
                         final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
 
         if (rps > 1000000) throw new IllegalArgumentException("rps<=1M!");
 
-        this.scheduler = new ExecutorScheduler();
+        if (exec == 2) {
+            this.scheduler = new ExecutorScheduler();
+        } else if (exec == 3) {
+            this.scheduler = new PlainScheduler();
+        } else {
+            this.scheduler = new HashedWheelScheduler();
+        }
+
+
         this.hwTimer = new HashedWheelTimer();
 
         this.requestSource = requestSource;
@@ -130,7 +140,7 @@ public class StressClient {
         if (rps > 0) {
             dynamicRate.set((int) (1000000 / rps / RPS_IMPERICAL_MULTIPLIER));
         }
-        System.out.printf("Started stress client `%s` to `%s` with %d rps (rate=%,d micros)%n", name, addr, rps, dynamicRate.get());
+        System.out.printf("Started stress client `%s` to `%s` with %d rps (rate=%d micros)%n", name, addr, rps, dynamicRate.get());
 
         scheduler.startAtFixedRate(new Runnable() {
             @Override
@@ -226,13 +236,14 @@ public class StressClient {
         final int rps = Integer.valueOf(System.getProperty("rps", "-1"));
         final boolean server = System.getProperty("server") != null;
         final boolean debug = System.getProperty("debug") != null;
+        final int exec = Integer.valueOf(System.getProperty("rps", "-1"));
 
         if (server) {
             new CountingServer(port, 100, MILLISECONDS).start();
             TimeUnit.SECONDS.sleep(2);
         }
 
-        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 3000, 3000, false, debug);
+        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 1, 3000, 3000, false, debug);
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -319,7 +330,7 @@ public class StressClient {
 
 //            int max = Math.max(Math.max(connected.get(), received.get()), sent.get());
 
-        System.err.printf("ERROR: not enough ports! You should decrease rps(=%d now), max: %,d%n", rps, conn);
+        System.err.printf("ERROR: not enough ports! You should decrease rps(=%d now), max: %d%n", rps, conn);
         //e.printStackTrace(System.err);
 
 
