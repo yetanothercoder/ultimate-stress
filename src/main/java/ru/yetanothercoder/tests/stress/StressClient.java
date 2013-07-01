@@ -37,7 +37,6 @@ public class StressClient {
     private final RequestSource requestSource;
     private final SocketAddress addr;
     private final int rps;
-    private final int connLimit;
     private final ClientBootstrap bootstrap;
     private final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger sent = new AtomicInteger(0);
@@ -94,7 +93,6 @@ public class StressClient {
         this.port = port;
         this.addr = new InetSocketAddress(host, port);
 
-        this.connLimit = (int) (rps * RPS_IMPERICAL_MULTIPLIER);
         this.rps = rps;
         this.debug = debug;
 
@@ -319,7 +317,7 @@ public class StressClient {
     }
 
     private void countPortErrorsOrExit(Throwable e) {
-        if (dynamicRate.get() > 1 && (be.get() + ce.get() < 10)) return;
+        if (mode.get() != 0 || (dynamicRate.get() > 1 && (be.get() + ce.get() < 10))) return;
 
 //        e.printStackTrace(System.err);
 
@@ -335,13 +333,12 @@ public class StressClient {
 
 
         int newRate;
-        if (dynamicRate.get() > 1 || rps > 0) {
-            // just tune
+        if (dynamicRate.get() > 1 || rps > 0) { // just tune
             newRate = (int) (1.2 * dynamicRate.get());
             newRate = Math.max(newRate, dynamicRate.get() + 1);
         } else {
             // set initial value
-            newRate = (int) (1000000 / conn);
+            newRate = (int) (1.1 * 1000000 / conn);
         }
 
         dynamicRate.set(newRate);
