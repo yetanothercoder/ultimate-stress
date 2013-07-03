@@ -11,6 +11,9 @@
 
 
     <build>
+
+        <sourceDirectory>src/java</sourceDirectory>
+
         <plugins>
             <plugin>
                 <!-- This is for building it as single jar: $ mvn clean assembly:single -->

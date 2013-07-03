@@ -1,4 +1,4 @@
-package ru.yetanothercoder.tests.stress;
+package ru.yetanothercoder.tests.stress.requests;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 

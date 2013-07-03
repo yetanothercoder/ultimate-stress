@@ -2,6 +2,7 @@ package ru.yetanothercoder.tests.stress;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
+import ru.yetanothercoder.tests.stress.requests.RequestSource;
 
 import java.nio.charset.Charset;
 

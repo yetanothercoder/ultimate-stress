@@ -9,6 +9,7 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
+import ru.yetanothercoder.tests.stress.requests.RequestSource;
 import ru.yetanothercoder.tests.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.tests.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.tests.stress.timer.PlainScheduler;
@@ -31,6 +32,8 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
+ * TODO: 1. src directory 2. unit test 3. http files
+ *
  * TCP/IP Stress Client based on Netty
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
