@@ -94,8 +94,10 @@ public class CountingServer {
         public void messageReceived(ChannelHandlerContext ctx, final MessageEvent e) throws Exception {
             received.incrementAndGet();
 
-            ChannelBuffer message = (ChannelBuffer) e.getMessage();
-            //System.out.println("received:\n" + new String(message.array()));
+            if (debug) {
+                ChannelBuffer message = (ChannelBuffer) e.getMessage();
+                System.out.printf("received: %s%n", new String(message.array()));
+            }
 
             final Channel channel = e.getChannel();
 
@@ -119,8 +121,9 @@ public class CountingServer {
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             errors.incrementAndGet();
 
-
-            //super.exceptionCaught(ctx, e);
+            if (debug) {
+                e.getCause().printStackTrace(System.err);
+            }
         }
 
         private void writeAnswer(Channel channel) {

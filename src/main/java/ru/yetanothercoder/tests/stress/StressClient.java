@@ -50,17 +50,17 @@ public class StressClient {
     private final AtomicInteger be = new AtomicInteger(0);
     private final AtomicInteger ce = new AtomicInteger(0);
     private final AtomicInteger ie = new AtomicInteger(0);
-    private final AtomicInteger nn = new AtomicInteger(0);
+    private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
+    private final AtomicInteger nn = new AtomicInteger(0);
     private final double tuningFactor;
     private final double initialTuningFactor;
-    private String name;
 
+    private String name;
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final Scheduler scheduler;
-    private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
@@ -233,7 +233,7 @@ public class StressClient {
             connected.incrementAndGet();
         } catch (ChannelException e) {
             if (e.getCause() instanceof SocketException) {
-                countPortErrorsOrExit(e.getCause());
+                processLimitErrors();
             } else {
                 nn.incrementAndGet();
             }
@@ -246,13 +246,12 @@ public class StressClient {
 
     public void stop() {
         System.out.printf("client `%s` stopping...%n", name);
+
         requestExecutor.shutdownNow();
         scheduler.shutdown();
         hwTimer.stop();
-        if (server != null) {
-        }
-
         statExecutor.shutdownNow();
+        if (server != null) server.stop();
         bootstrap.shutdown();
     }
 
@@ -289,7 +288,6 @@ public class StressClient {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
             received.incrementAndGet();
-//            connected.decrementAndGet();
         }
 
         @Override
@@ -319,10 +317,10 @@ public class StressClient {
                 te.incrementAndGet();
             } else if (exc instanceof BindException) {
                 be.incrementAndGet();
-                countPortErrorsOrExit(exc);
+                processLimitErrors();
             } else if (exc instanceof ConnectException) {
                 ce.incrementAndGet();
-                countPortErrorsOrExit(exc);
+                processLimitErrors();
             } else if (exc instanceof IOException) {
                 ie.incrementAndGet();
             } else {
@@ -335,23 +333,13 @@ public class StressClient {
         }
     }
 
-    private void countPortErrorsOrExit(Throwable e) {
+    private void processLimitErrors() {
         if (pause || (be.get() + ce.get() < 10)) return;
 
         pause = true;
 
         int oldRate = dynamicRate.get();
-        int newRate;
-        if (dynamicRate.get() > 1) {
-            newRate = (int) Math.ceil(tuningFactor * dynamicRate.get());
-        } else {
-            // set initial value
-            int conn = connected.get();
-            newRate = (int) (initialTuningFactor * MILLION / conn);
-        }
-
-
-        dynamicRate.set(newRate);
+        int newRate = dynamicRate.get() > 1 ? tuneRate() : calculateInitRate();
 
         int newRps = (MILLION / newRate);
         int oldRps = (MILLION / oldRate);
@@ -359,11 +347,22 @@ public class StressClient {
         System.err.printf("ERROR: reached port limit! Decreasing rps: %d->%d (rate: %d->%d micros)%n",
                 oldRps, newRps, oldRate, newRate);
 
+        dynamicRate.set(newRate);
+
         statExecutor.schedule(new Runnable() {
             @Override
             public void run() {
                 pause = false;
             }
         }, 3, SECONDS);
+    }
+
+    private int tuneRate() {
+        return (int) Math.ceil(tuningFactor * dynamicRate.get());
+    }
+
+    private int calculateInitRate() {
+        int conn = connected.get();
+        return (int) initialTuningFactor * MILLION / conn;
     }
 }
