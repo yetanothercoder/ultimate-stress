@@ -1,4 +1,4 @@
-package ru.yetanothercoder.tests;
+package tests;
 
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;

@@ -1,4 +1,4 @@
-package ru.yetanothercoder.tests.stress.timer;
+package ru.yetanothercoder.stress.timer;
 
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;

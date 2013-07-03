@@ -1,8 +1,8 @@
-package ru.yetanothercoder.tests.stress;
+package ru.yetanothercoder.stress;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
-import ru.yetanothercoder.tests.stress.requests.RequestSource;
+import ru.yetanothercoder.stress.requests.RequestSource;
 
 import java.nio.charset.Charset;
 

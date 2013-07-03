@@ -1,4 +1,4 @@
-package ru.yetanothercoder.tests.stress;
+package ru.yetanothercoder.stress;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -9,11 +9,11 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import ru.yetanothercoder.tests.stress.requests.RequestSource;
-import ru.yetanothercoder.tests.stress.timer.ExecutorScheduler;
-import ru.yetanothercoder.tests.stress.timer.HashedWheelScheduler;
-import ru.yetanothercoder.tests.stress.timer.PlainScheduler;
-import ru.yetanothercoder.tests.stress.timer.Scheduler;
+import ru.yetanothercoder.stress.requests.RequestSource;
+import ru.yetanothercoder.stress.timer.ExecutorScheduler;
+import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
+import ru.yetanothercoder.stress.timer.PlainScheduler;
+import ru.yetanothercoder.stress.timer.Scheduler;
 
 import java.io.IOException;
 import java.net.*;

@@ -1,4 +1,4 @@
-package ru.yetanothercoder.tests.stress.timer;
+package ru.yetanothercoder.stress.timer;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;

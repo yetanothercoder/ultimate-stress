@@ -13,6 +13,7 @@
     <build>
 
         <sourceDirectory>src/java</sourceDirectory>
+        <testSourceDirectory>src/junits</testSourceDirectory>
 
         <plugins>
             <plugin>
@@ -21,7 +22,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>ru.yetanothercoder.tests.stress.StressClient</mainClass>
+                            <mainClass>ru.yetanothercoder.stress.StressClient</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
@@ -53,6 +54,13 @@
             <groupId>io.netty</groupId>
             <artifactId>netty</artifactId>
             <version>3.6.5.Final</version>
+        </dependency>
+
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.11</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 </project>
