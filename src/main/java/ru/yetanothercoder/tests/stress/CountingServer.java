@@ -33,20 +33,23 @@ public class CountingServer {
                     "Content-Length: 0\n\n", Charset.defaultCharset());
 
     private final int port;
+    private final boolean debug;
 
     private final Timer hwTimer;
     private final int randomDelay;
     private final TimeUnit delayUnit;
     private final Random r = new Random();
+    private ServerBootstrap bootstrap;
 
     public CountingServer(int port) {
-        this(port, -1, null);
+        this(port, -1, null, false);
     }
 
-    public CountingServer(int port, int randomDelay, TimeUnit delayUnit) {
+    public CountingServer(int port, int randomDelay, TimeUnit delayUnit, boolean debug) {
         this.delayUnit = delayUnit;
         this.randomDelay = randomDelay;
         this.port = port;
+        this.debug = debug;
         hwTimer = new HashedWheelTimer(10, MILLISECONDS);
     }
 
@@ -54,7 +57,7 @@ public class CountingServer {
         System.out.printf("SERVER: started counting server on %s port with %d ms random delay%n", port, randomDelay);
 
         // Configure the server.
-        ServerBootstrap bootstrap = new ServerBootstrap(
+        bootstrap = new ServerBootstrap(
                 new NioServerSocketChannelFactory(
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool()));
@@ -81,6 +84,10 @@ public class CountingServer {
         }, 0, 1, TimeUnit.SECONDS);
     }
 
+    public void stop() {
+        bootstrap.shutdown();
+        hwTimer.stop();
+    }
 
     private class CountingHandler extends SimpleChannelUpstreamHandler {
         @Override
@@ -111,6 +118,8 @@ public class CountingServer {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             errors.incrementAndGet();
+
+
             //super.exceptionCaught(ctx, e);
         }
 
@@ -123,7 +132,16 @@ public class CountingServer {
     public static void main(String[] args) throws Exception {
         final int port = Integer.valueOf(System.getProperty("port",  "8080"));
         final int delay = Integer.valueOf(System.getProperty("delay",  "100"));
+        boolean debug = System.getProperty("debug") != null;
 
-        new CountingServer(port, delay, MILLISECONDS).start();
+        final CountingServer server = new CountingServer(port, delay, MILLISECONDS, debug);
+        server.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                server.stop();
+            }
+        });
     }
 }

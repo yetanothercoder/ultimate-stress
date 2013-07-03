@@ -17,26 +17,30 @@ import ru.yetanothercoder.tests.stress.timer.Scheduler;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.lang.Integer.valueOf;
+import static java.lang.System.getProperty;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * TODO: 1. check connectivity before start 2. count connection refused exceptions
  * TCP/IP Stress Client based on Netty
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
  */
 public class StressClient {
 
+    public static final int MILLION = 1000000;
+
     private final RequestSource requestSource;
     private final SocketAddress addr;
-    private final int rps;
     private final ClientBootstrap bootstrap;
     private final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger sent = new AtomicInteger(0);
@@ -47,34 +51,54 @@ public class StressClient {
     private final AtomicInteger ce = new AtomicInteger(0);
     private final AtomicInteger ie = new AtomicInteger(0);
     private final AtomicInteger nn = new AtomicInteger(0);
+
+    private final double tuningFactor;
+    private final double initialTuningFactor;
     private String name;
 
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService requestExecutor = Executors.newCachedThreadPool();
+    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
     private final Scheduler scheduler;
     private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
-    private final AtomicInteger mode = new AtomicInteger(0);
+    private volatile boolean pause = false;
 
-    /**
-     * in practice, real rps was this times lower, seems due to jvm overhead
-     */
-    private static final double RPS_IMPERICAL_MULTIPLIER = 1;
     private final String host;
     private final int port;
+    private final Map<String, String> config = new LinkedHashMap<String, String>();
+    private CountingServer server = null;
 
-    public StressClient(String host, int port, RequestSource requestSource, int rps) {
-        this(host, port, requestSource, rps, -1, -1, -1, false, false);
-    }
+    public StressClient(String host, String port, String rps, RequestSource requestSource) {
 
-    public StressClient(String host, int port, RequestSource requestSource, int rps, int exec,
-                        final int readTimeoutMs, final int writeTimeoutMs, boolean print, boolean debug) {
+        // params >>
+        this.host = registerParam("host", host);
+        this.port = valueOf(registerParam("port", port));
+        int initRps = valueOf(registerParam("rps", rps));
 
-        if (rps > 1000000) throw new IllegalArgumentException("rps<=1M!");
+        final int readTimeoutMs = valueOf(registerParam("read.ms", "3000"));
+        final int writeTimeoutMs = valueOf(registerParam("write.ms", "3000"));
+
+        int exec = valueOf(registerParam("exec", "1"));
+        print = registerParam("print") != null;
+        debug = registerParam("debug") != null;
+
+        if (registerParam("server") != null) {
+            server = new CountingServer(this.port, 100, MILLISECONDS, debug);
+        }
+
+        tuningFactor = Double.valueOf(registerParam("tfactor", "1.2"));
+        initialTuningFactor = Double.valueOf(registerParam("tfactor0", "1.1"));
+        // << params
+
+        if (initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
+
+        if (initRps > 0) {
+            dynamicRate.set(MILLION / initRps);
+        }
 
         if (exec == 2) {
             this.scheduler = new ExecutorScheduler();
@@ -85,22 +109,15 @@ public class StressClient {
         }
 
 
-        this.hwTimer = new HashedWheelTimer();
-
         this.requestSource = requestSource;
-        this.print = print;
-        this.host = host;
-        this.port = port;
-        this.addr = new InetSocketAddress(host, port);
 
-        this.rps = rps;
-        this.debug = debug;
-
+        this.addr = new InetSocketAddress(this.host, this.port);
         bootstrap = new ClientBootstrap(
                 new NioClientSocketChannelFactory(
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool()));
 
+        this.hwTimer = new HashedWheelTimer();
         // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
             @Override
@@ -128,22 +145,36 @@ public class StressClient {
         }
     }
 
-    public void start() {
+    private String registerParam(String name) {
+        return registerParam(name, null);
+    }
+
+    private String registerParam(String name, String def) {
+        String value = getProperty(name, def);
+        config.put(name, value);
+        return value;
+    }
+
+    public void start() throws InterruptedException {
+        System.out.printf("Starting stress `%s` to `%s` with %d rps (rate=%d micros), full config: %s%n",
+                name, addr, MILLION / dynamicRate.get(), dynamicRate.get(), config);
+
+        if (server != null) {
+            server.start();
+            TimeUnit.SECONDS.sleep(2);
+        }
+
+
         if (!checkConnection()) {
             System.err.printf("ERROR: no connection to %s:%d%n", host, port);
             System.exit(0);
         }
 
 
-        if (rps > 0) {
-            dynamicRate.set((int) (1000000 / rps / RPS_IMPERICAL_MULTIPLIER));
-        }
-        System.out.printf("Started stress client `%s` to `%s` with %d rps (rate=%d micros)%n", name, addr, rps, dynamicRate.get());
-
         scheduler.startAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                if (mode.get() == 0) sendOne();
+                if (!pause) sendOne();
             }
         }, dynamicRate);
 
@@ -179,10 +210,7 @@ public class StressClient {
 
     private void showStats() {
         int conn = connected.get();
-        if (dynamicRate.get() > 1 || rps > 0) {
-            /*if (be.get() > 50) {
-                dynamicRate.set((int) (dynamicRate.get() * 1.2));
-            }*/
+        if (dynamicRate.get() > 1) {
             connected.set(0);
         }
         int sentSoFar = sent.getAndSet(0);
@@ -200,9 +228,6 @@ public class StressClient {
     }
 
     private void sendOne() {
-        // counting connections beforehand!
-//        connected.incrementAndGet();
-
         try {
             ChannelFuture future = bootstrap.connect(addr);
             connected.incrementAndGet();
@@ -224,24 +249,19 @@ public class StressClient {
         requestExecutor.shutdownNow();
         scheduler.shutdown();
         hwTimer.stop();
+        if (server != null) {
+        }
+
         statExecutor.shutdownNow();
         bootstrap.shutdown();
     }
 
     public static void main(String[] args) throws Exception {
-        final String host = System.getProperty("host", "localhost");
-        final int port = Integer.valueOf(System.getProperty("port", "8080"));
-        final int rps = Integer.valueOf(System.getProperty("rps", "-1"));
-        final boolean server = System.getProperty("server") != null;
-        final boolean debug = System.getProperty("debug") != null;
-        final int exec = Integer.valueOf(System.getProperty("rps", "-1"));
+        final String host = args.length > 0 ? args[0] : "localhost";
+        final String port = args.length > 1 ? args[1] : "8080";
+        final String rps = args.length > 2 ? args[2] : "-1";
 
-        if (server) {
-            new CountingServer(port, 100, MILLISECONDS).start();
-            TimeUnit.SECONDS.sleep(2);
-        }
-
-        final StressClient client = new StressClient(host, port, new StubHttpRequest(), rps, 1, 3000, 3000, false, debug);
+        final StressClient client = new StressClient(host, port, rps, new StubHttpRequest());
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
@@ -259,7 +279,7 @@ public class StressClient {
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-            if (mode.get() > 0) {
+            if (pause) {
                 e.getChannel().close();
                 return;
             }
@@ -274,7 +294,7 @@ public class StressClient {
 
         @Override
         public void channelConnected(ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
-            if (mode.get() > 0) {
+            if (pause) {
                 e.getChannel().close();
                 return;
             }
@@ -291,7 +311,6 @@ public class StressClient {
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
-            //connected.decrementAndGet();
 
             Throwable exc = e.getCause();
 
@@ -317,42 +336,34 @@ public class StressClient {
     }
 
     private void countPortErrorsOrExit(Throwable e) {
-        if (mode.get() != 0 || (dynamicRate.get() > 1 && (be.get() + ce.get() < 10))) return;
+        if (pause || (be.get() + ce.get() < 10)) return;
 
-//        e.printStackTrace(System.err);
+        pause = true;
 
-//        if (be.incrementAndGet() > 0) {
-        mode.set(1);
-        int conn = connected.get();
-//            final int connectedNow = connected.get();
-
-//            int max = Math.max(Math.max(connected.get(), received.get()), sent.get());
-
-        System.err.printf("ERROR: not enough ports! You should decrease rps(=%d now), max: %d%n", rps, conn);
-        //e.printStackTrace(System.err);
-
-
+        int oldRate = dynamicRate.get();
         int newRate;
-        if (dynamicRate.get() > 1 || rps > 0) { // just tune
-            newRate = (int) (1.2 * dynamicRate.get());
-            newRate = Math.max(newRate, dynamicRate.get() + 1);
+        if (dynamicRate.get() > 1) {
+            newRate = (int) Math.ceil(tuningFactor * dynamicRate.get());
         } else {
             // set initial value
-            newRate = (int) (1.1 * 1000000 / conn);
+            int conn = connected.get();
+            newRate = (int) (initialTuningFactor * MILLION / conn);
         }
 
-        dynamicRate.set(newRate);
-        int newRps = (int) ((1000000 / newRate) / RPS_IMPERICAL_MULTIPLIER);
-        System.out.printf("new rps: %d%n", newRps);
 
+        dynamicRate.set(newRate);
+
+        int newRps = (MILLION / newRate);
+        int oldRps = (MILLION / oldRate);
+
+        System.err.printf("ERROR: reached port limit! Decreasing rps: %d->%d (rate: %d->%d micros)%n",
+                oldRps, newRps, oldRate, newRate);
 
         statExecutor.schedule(new Runnable() {
             @Override
             public void run() {
-                mode.set(0);
+                pause = false;
             }
         }, 3, SECONDS);
-//            System.exit(1);
-//        }
     }
 }
