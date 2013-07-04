@@ -79,7 +79,7 @@ public class StressClient {
     private final int port;
     private final int durationSec;
 
-    private final Map<String, String> config = new LinkedHashMap<String, String>();
+    private final Map<String, String> config = new LinkedHashMap<>();
     private CountingServer server = null;
     private final int sample;
     private final int exec;
@@ -188,7 +188,7 @@ public class StressClient {
             sampleRequests(Math.max(sample, MILLION));
         }
 
-        System.out.printf("Starting stress `%s` to `%s` with %d rps (rate=%d micros), full config: %s%n",
+        System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config: %s%n",
                 name, addr, MILLION / dynamicRate.get(), dynamicRate.get(), config);
 
         if (server != null) {
@@ -198,7 +198,7 @@ public class StressClient {
 
 
         if (!checkConnection()) {
-            System.err.printf("ERROR: no connection to %s:%d%n", host, port);
+            System.err.printf("ERROR: no connection to %s:%,d%n", host, port);
             System.exit(0);
         }
 
@@ -230,22 +230,11 @@ public class StressClient {
     }
 
     private boolean checkConnection() {
-        Socket socket = null;
-
         // java 6 style to handle such errors >>
-        try {
-            socket = new Socket(host, port);
+        try (Socket socket = new Socket(host, port)) {
             return socket.isConnected();
         } catch (IOException e) {
             // ignore
-        } finally {
-            if (socket != null) {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                    // ignore
-                }
-            }
         }
         return false;
     }
@@ -257,7 +246,7 @@ public class StressClient {
         }
         int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
-        System.out.printf("STAT: sent=%5s, received=%5s, connected=%5s, rate=%3s | ERRORS: timeouts=%5s, binds=%5s, connects=%5s, io=%5s, nn=%s%n",
+        System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
                 sentSoFar,
                 received.getAndSet(0),
                 conn, dynamicRate.get(),
@@ -370,7 +359,7 @@ public class StressClient {
         int newRps = (MILLION / newRate);
         int oldRps = (MILLION / oldRate);
 
-        System.err.printf("ERROR: reached port limit! Decreasing rps: %d->%d (rate: %d->%d micros)%n",
+        System.err.printf("ERROR: reached port limit! Decreasing rps: %,d->%,d (rate: %,d->%,d micros)%n",
                 oldRps, newRps, oldRate, newRate);
 
         dynamicRate.set(newRate);
@@ -401,7 +390,7 @@ public class StressClient {
 
         int tenPercent = sampleSize / 10;
         for (int i = 0, p = 0; i < sampleSize; i++) {
-            if (i % tenPercent == 0) System.out.printf(" %d%%", ++p * 10);
+            if (i % tenPercent == 0) System.out.printf(" %,d%%", ++p * 10);
 
             long t0 = System.nanoTime();
             ChannelBuffer request = requestSource.next();
@@ -409,7 +398,7 @@ public class StressClient {
 
             sampleAgainstJitOpt[ new Random().nextInt(1000) ] = request;
         }
-        System.out.printf("%n%nrequest preparation time: %d ns (av on %d runs)%n", total / sampleSize, sampleSize);
+        System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs)%n", total / sampleSize, sampleSize);
 
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
         System.out.printf("random sample: %n%s%n%n", randomRequest);
