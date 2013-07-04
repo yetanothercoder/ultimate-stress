@@ -1,4 +1,4 @@
-package ru.yetanothercoder.stress;
+package ru.yetanothercoder.stress.server;
 
 import org.jboss.netty.bootstrap.ServerBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -25,6 +25,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 public class CountingServer {
 
     private final AtomicInteger received = new AtomicInteger(0);
+    public final AtomicInteger total = new AtomicInteger(0);
     private final AtomicInteger errors = new AtomicInteger(0);
 
     public static final ChannelBuffer RESP204 = ChannelBuffers.copiedBuffer(
@@ -77,6 +78,8 @@ public class CountingServer {
             @Override
             public void run() {
                 int perSecond = received.getAndSet(0);
+                total.addAndGet(perSecond);
+
                 if (perSecond > 0) {
                     System.out.printf("SERVER: received %d rps, errors: %d%n", perSecond, errors.getAndSet(0));
                 }
@@ -85,6 +88,8 @@ public class CountingServer {
     }
 
     public void stop() {
+        System.out.println("SERVER: stopping...");
+
         bootstrap.shutdown();
         hwTimer.stop();
     }

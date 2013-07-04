@@ -1,4 +1,4 @@
-package ru.yetanothercoder.stress;
+package ru.yetanothercoder.stress.utils;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.channel.*;

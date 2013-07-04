@@ -1,5 +1,6 @@
 package tests;
 
+import java.util.Arrays;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -12,6 +13,9 @@ public class Tests {
     static AtomicInteger c = new AtomicInteger(0);
 
     public static void main(String[] args) throws InterruptedException {
+        System.out.println(Arrays.toString("\n\n".getBytes()));
+
+
         System.out.println("started!");
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
             @Override

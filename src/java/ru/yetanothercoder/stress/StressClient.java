@@ -2,6 +2,7 @@ package ru.yetanothercoder.stress;
 
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.*;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
@@ -9,7 +10,9 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
+import ru.yetanothercoder.stress.requests.HttpRequestsFromFiles;
 import ru.yetanothercoder.stress.requests.RequestSource;
+import ru.yetanothercoder.stress.server.CountingServer;
 import ru.yetanothercoder.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.stress.timer.PlainScheduler;
@@ -18,8 +21,10 @@ import ru.yetanothercoder.stress.timer.Scheduler;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -32,7 +37,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * TODO: 1. src directory 2. unit test 3. http files
+ * TODO: 3. http files
  *
  * TCP/IP Stress Client based on Netty
  *
@@ -72,24 +77,31 @@ public class StressClient {
 
     private final String host;
     private final int port;
+    private final int durationSec;
+
     private final Map<String, String> config = new LinkedHashMap<String, String>();
     private CountingServer server = null;
+    private final int sample;
+    private final int exec;
+    private final int initRps;
 
     public StressClient(String host, String port, String rps, RequestSource requestSource) {
 
         // params >>
         this.host = registerParam("host", host);
         this.port = valueOf(registerParam("port", port));
-        int initRps = valueOf(registerParam("rps", rps));
+        initRps = valueOf(registerParam("rps", rps));
+        durationSec = valueOf(registerParam("seconds", "-1"));
 
         final int readTimeoutMs = valueOf(registerParam("read.ms", "3000"));
         final int writeTimeoutMs = valueOf(registerParam("write.ms", "3000"));
 
-        int exec = valueOf(registerParam("exec", "1"));
-        print = registerParam("print") != null;
-        debug = registerParam("debug") != null;
+        exec = valueOf(registerParam("exec", "1"));
+        sample = valueOf(registerParam("sample", "-1"));
+        print = "1".equals(registerParam("print", "0"));
+        debug = "1".equals(registerParam("debug", "0"));
 
-        if (registerParam("server") != null) {
+        if ("1".equals(registerParam("server", "0"))) {
             server = new CountingServer(this.port, 100, MILLISECONDS, debug);
         }
 
@@ -97,30 +109,39 @@ public class StressClient {
         initialTuningFactor = Double.valueOf(registerParam("tfactor0", "1.1"));
         // << params
 
+        this.requestSource = requestSource;
+        this.hwTimer = new HashedWheelTimer();
+        this.addr = new InetSocketAddress(this.host, this.port);
+
         if (initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
 
         if (initRps > 0) {
             dynamicRate.set(MILLION / initRps);
         }
 
-        if (exec == 2) {
-            this.scheduler = new ExecutorScheduler();
-        } else if (exec == 3) {
-            this.scheduler = new PlainScheduler();
-        } else {
-            this.scheduler = new HashedWheelScheduler();
+        scheduler = initMainExecutor();
+
+        bootstrap = initNetty(readTimeoutMs, writeTimeoutMs);
+
+        name = setName();
+    }
+
+    private String setName() {
+        String name = "Client";
+        try {
+            name += "@" + InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            // ignore
         }
+        return name;
+    }
 
-
-        this.requestSource = requestSource;
-
-        this.addr = new InetSocketAddress(this.host, this.port);
-        bootstrap = new ClientBootstrap(
+    private ClientBootstrap initNetty(final int readTimeoutMs, final int writeTimeoutMs) {
+        ClientBootstrap bootstrap = new ClientBootstrap(
                 new NioClientSocketChannelFactory(
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool()));
 
-        this.hwTimer = new HashedWheelTimer();
         // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
             @Override
@@ -139,12 +160,16 @@ public class StressClient {
             }
         });
         //bootstrap.setOption("reuseAddress", "true");
+        return bootstrap;
+    }
 
-        name = "Client";
-        try {
-            name += "@" + InetAddress.getLocalHost().getHostName();
-        } catch (UnknownHostException e) {
-            // ignore
+    private Scheduler initMainExecutor() {
+        if (exec == 2) {
+            return new ExecutorScheduler();
+        } else if (exec == 3) {
+            return new PlainScheduler();
+        } else {
+            return new HashedWheelScheduler();
         }
     }
 
@@ -159,6 +184,10 @@ public class StressClient {
     }
 
     public void start() throws InterruptedException {
+        if (sample > 0) {
+            sampleRequests(Math.max(sample, MILLION));
+        }
+
         System.out.printf("Starting stress `%s` to `%s` with %d rps (rate=%d micros), full config: %s%n",
                 name, addr, MILLION / dynamicRate.get(), dynamicRate.get(), config);
 
@@ -188,6 +217,16 @@ public class StressClient {
 
             }
         }, 0, 1, SECONDS);
+
+        if (durationSec > 0) {
+            statExecutor.schedule(new Runnable() {
+                @Override
+                public void run() {
+                    System.out.printf("duration %s seconds elapsed, exiting...%n", durationSec);
+                    System.exit(0);
+                }
+            }, durationSec, SECONDS);
+        }
     }
 
     private boolean checkConnection() {
@@ -256,22 +295,6 @@ public class StressClient {
         statExecutor.shutdownNow();
         if (server != null) server.stop();
         bootstrap.shutdown();
-    }
-
-    public static void main(String[] args) throws Exception {
-        final String host = args.length > 0 ? args[0] : "localhost";
-        final String port = args.length > 1 ? args[1] : "8080";
-        final String rps = args.length > 2 ? args[2] : "-1";
-
-        final StressClient client = new StressClient(host, port, rps, new StubHttpRequest());
-        client.start();
-
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            @Override
-            public void run() {
-                client.stop();
-            }
-        });
     }
 
     public int getSentTotal() {
@@ -367,5 +390,45 @@ public class StressClient {
     private int calculateInitRate() {
         int conn = connected.get();
         return (int) initialTuningFactor * MILLION / conn;
+    }
+
+    private void sampleRequests(final int sampleSize) {
+        System.out.print("request sampling: ");
+        long total = 0;
+
+        ChannelBuffer[] sampleAgainstJitOpt = new ChannelBuffer[1000];
+        Arrays.fill(sampleAgainstJitOpt, ChannelBuffers.copiedBuffer("empty".getBytes()));
+
+        int tenPercent = sampleSize / 10;
+        for (int i = 0, p = 0; i < sampleSize; i++) {
+            if (i % tenPercent == 0) System.out.printf(" %d%%", ++p * 10);
+
+            long t0 = System.nanoTime();
+            ChannelBuffer request = requestSource.next();
+            total += System.nanoTime() - t0;
+
+            sampleAgainstJitOpt[ new Random().nextInt(1000) ] = request;
+        }
+        System.out.printf("%n%nrequest preparation time: %d ns (av on %d runs)%n", total / sampleSize, sampleSize);
+
+        String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
+        System.out.printf("random sample: %n%s%n%n", randomRequest);
+    }
+
+
+    public static void main(String[] args) throws Exception {
+        final String host = args.length > 0 ? args[0] : "localhost";
+        final String port = args.length > 1 ? args[1] : "8080";
+        final String rps = args.length > 2 ? args[2] : "-1";
+
+        final StressClient client = new StressClient(host, port, rps, new HttpRequestsFromFiles(".", "http"));
+        client.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                client.stop();
+            }
+        });
     }
 }
