@@ -1,7 +1,6 @@
 package ru.yetanothercoder.stress.requests;
 
 import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -51,7 +50,7 @@ public class HttpFileTemplateSource implements RequestSource {
         return result;
     }
 
-    private List<ChannelBuffer> readFiles(String hostPort) throws IOException {
+    private List<String> readFiles(String hostPort) throws IOException {
         FilenameFilter filter = new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -59,7 +58,7 @@ public class HttpFileTemplateSource implements RequestSource {
             }
         };
 
-        List<ChannelBuffer> result = new ArrayList<>();
+        List<String> result = new ArrayList<>();
         File[] files = dir.listFiles(filter);
         Arrays.sort(files);
         for (File file : files) {
@@ -69,24 +68,24 @@ public class HttpFileTemplateSource implements RequestSource {
         return result;
     }
 
-    private ChannelBuffer compileTemplate(File file, String hostPort) throws IOException {
+    private String compileTemplate(File file, String hostPort) throws IOException {
         byte[] bytes = Files.readAllBytes(Paths.get(file.getPath()));
         String contents = UTF_8.decode(ByteBuffer.wrap(bytes)).toString();
         contents += "\n\n";  // add empty lines for sure
-        return ChannelBuffers.copiedBuffer(contents, UTF_8);
+        return contents;
     }
 
     @Override
     public ChannelBuffer next() {
-        ChannelBuffer cb = templates.get(i.getAndIncrement() % templates.size());
-        return processOnEachRequest(cb);
+        String tpl = templates.get(i.getAndIncrement() % templates.size());
+        return processOnEachRequest(tpl);
     }
 
     public void addReplacement(String name, String value) {
         replacementList.add(new Pair(name, value));
     }
 
-    protected ChannelBuffer processOnEachRequest(ChannelBuffer template) {
+    protected ChannelBuffer processOnEachRequest(String template) {
         return replace(template, );
     }
 
