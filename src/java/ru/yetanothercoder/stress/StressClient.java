@@ -10,7 +10,7 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import ru.yetanothercoder.stress.requests.HttpRequestsFromFiles;
+import ru.yetanothercoder.stress.requests.HttpFileTemplateSource;
 import ru.yetanothercoder.stress.requests.RequestSource;
 import ru.yetanothercoder.stress.server.CountingServer;
 import ru.yetanothercoder.stress.timer.ExecutorScheduler;
@@ -37,8 +37,6 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * TODO: 3. http files
- *
  * TCP/IP Stress Client based on Netty
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
@@ -171,10 +169,6 @@ public class StressClient {
         } else {
             return new HashedWheelScheduler();
         }
-    }
-
-    private String registerParam(String name) {
-        return registerParam(name, null);
     }
 
     private String registerParam(String name, String def) {
@@ -410,7 +404,7 @@ public class StressClient {
         final String port = args.length > 1 ? args[1] : "8080";
         final String rps = args.length > 2 ? args[2] : "-1";
 
-        final StressClient client = new StressClient(host, port, rps, new HttpRequestsFromFiles(".", "http"));
+        final StressClient client = new StressClient(host, port, rps, new HttpFileTemplateSource(".", "http"));
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {
