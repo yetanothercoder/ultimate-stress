@@ -5,8 +5,10 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.PrintWriter;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * @author Mikhail Baturov, 7/4/13 4:38 PM
@@ -21,22 +23,27 @@ public class HttpFileTemplateSourceTest {
         file2.deleteOnExit();
 
         PrintWriter wr = new PrintWriter(file1);
-        wr.print("abc$1");
+        wr.print("abc$1zz$hp");
         wr.close();
+        TimeUnit.SECONDS.sleep(1);
 
         wr = new PrintWriter(file2);
-        wr.print("def$2");
+        wr.print("def$2zz");
         wr.close();
 
         Map<String, String> repl = new HashMap<>();
         repl.put("$1", "11");
         repl.put("$2", "22");
 
-        HttpFileTemplateSource source = new HttpFileTemplateSource(tmpDir.getPath(), "http", repl);
+        HttpFileTemplateSource source = new HttpFileTemplateSource(tmpDir.getPath(), "http", "77", repl);
 
-        Assert.assertEquals("abc11\n\n", new String(source.next().array()));
-        Assert.assertEquals("def22\n\n", new String(source.next().array()));
-        Assert.assertEquals("abc11\n\n", new String(source.next().array()));
-        Assert.assertEquals("def22\n\n", new String(source.next().array()));
+        String[] requests = new String[] {new String(source.next().array()), new String(source.next().array()), new String(source.next().array()), new String(source.next().array())};
+
+        Arrays.sort(requests); // against OS random directory listings
+
+        Assert.assertEquals("abc11zz77\n\n", requests[0]);
+        Assert.assertEquals("abc11zz77\n\n", requests[1]);
+        Assert.assertEquals("def22zz\n\n", requests[2]);
+        Assert.assertEquals("def22zz\n\n", requests[3]);
     }
 }

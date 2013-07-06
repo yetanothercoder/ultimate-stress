@@ -404,7 +404,8 @@ public class StressClient {
         final String port = args.length > 1 ? args[1] : "8080";
         final String rps = args.length > 2 ? args[2] : "-1";
 
-        final StressClient client = new StressClient(host, port, rps, new HttpFileTemplateSource(".", "http"));
+        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, null);
+        final StressClient client = new StressClient(host, port, rps, reqSrc);
         client.start();
 
         Runtime.getRuntime().addShutdownHook(new Thread() {

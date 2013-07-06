@@ -1,11 +1,11 @@
 package ru.yetanothercoder.stress.requests;
 
 import org.jboss.netty.buffer.ChannelBuffer;
+import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -22,24 +22,29 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 public class HttpFileTemplateSource implements RequestSource {
 
-    private final String prefix;
+    public static final String HOSTPORT_PLACEHOLDER = "$hp";
+
+    private final String prefix, hostPort;
     private final File dir;
     private final List<String> templates;
     private final AtomicInteger i = new AtomicInteger(0);
     private final List<Pair> replacementList = new CopyOnWriteArrayList<>();
 
-    public HttpFileTemplateSource(String path, String prefix, Map<String, String> replacements) {
+    public HttpFileTemplateSource(String path, String filePrefix, String hostPort, Map<String, String> replacements) {
         this.dir = new File(path);
         if (!dir.exists()) throw new IllegalArgumentException("Incorrect path: " + path);
-        this.prefix = prefix;
+        this.prefix = filePrefix;
 
-        replacementList.addAll(fromMap(replacements));
+        if (replacements != null) {
+            replacementList.addAll(fromMap(replacements));
+        }
 
         try {
-            templates = readFiles(null);
+            templates = readFiles(hostPort);
         } catch (IOException e) {
             throw new IllegalArgumentException("failed reading files from " + dir.getAbsolutePath(), e);
         }
+        this.hostPort = hostPort;
     }
 
     private List<Pair> fromMap(Map<String, String> replacements) {
@@ -70,14 +75,16 @@ public class HttpFileTemplateSource implements RequestSource {
 
     private String compileTemplate(File file, String hostPort) throws IOException {
         byte[] bytes = Files.readAllBytes(Paths.get(file.getPath()));
-        String contents = UTF_8.decode(ByteBuffer.wrap(bytes)).toString();
-        contents += "\n\n";  // add empty lines for sure
-        return contents;
+        String contents = new String(bytes, UTF_8);
+        String template = fastReplace(contents, HOSTPORT_PLACEHOLDER, hostPort);
+        template += "\n\n";  // add empty lines for sure
+        return template;
     }
 
     @Override
     public ChannelBuffer next() {
-        String tpl = templates.get(i.getAndIncrement() % templates.size());
+        int index = i.getAndIncrement() % templates.size();
+        String tpl = templates.get(index);
         return processOnEachRequest(tpl);
     }
 
@@ -86,7 +93,19 @@ public class HttpFileTemplateSource implements RequestSource {
     }
 
     protected ChannelBuffer processOnEachRequest(String template) {
-        return replace(template, );
+        for (Pair pair : replacementList) {
+            template = fastReplace(template, pair.name, pair.value);
+        }
+        return ChannelBuffers.wrappedBuffer(template.getBytes(UTF_8));
+    }
+
+    private String fastReplace(String text, String name, String value) {
+        int start;
+        if (text == null || (start = text.indexOf(name)) < 0) return text;
+
+        return text.substring(0, start) + value + text.substring(start + name.length());
+
+
     }
 
     class Pair {
