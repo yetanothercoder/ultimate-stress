@@ -21,10 +21,7 @@ import ru.yetanothercoder.stress.timer.Scheduler;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -392,7 +389,8 @@ public class StressClient {
 
             sampleAgainstJitOpt[ new Random().nextInt(1000) ] = request;
         }
-        System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs)%n", total / sampleSize, sampleSize);
+        long requestNs = total / sampleSize;
+        System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
 
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
         System.out.printf("random sample: %n%s%n%n", randomRequest);
@@ -404,7 +402,11 @@ public class StressClient {
         final String port = args.length > 1 ? args[1] : "8080";
         final String rps = args.length > 2 ? args[2] : "-1";
 
-        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, null);
+        Map<String, String> r = new HashMap<>();
+        r.put("$browser","Mozilla/5.0");
+        r.put("$v","11.0");
+
+        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
         final StressClient client = new StressClient(host, port, rps, reqSrc);
         client.start();
 
