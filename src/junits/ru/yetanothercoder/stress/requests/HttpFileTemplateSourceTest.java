@@ -8,7 +8,6 @@ import java.io.PrintWriter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 /**
  * @author Mikhail Baturov, 7/4/13 4:38 PM
@@ -25,7 +24,6 @@ public class HttpFileTemplateSourceTest {
         PrintWriter wr = new PrintWriter(file1);
         wr.print("abc$1zz$hp");
         wr.close();
-        TimeUnit.SECONDS.sleep(1);
 
         wr = new PrintWriter(file2);
         wr.print("def$2zz");
