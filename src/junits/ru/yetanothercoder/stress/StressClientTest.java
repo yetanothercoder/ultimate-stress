@@ -28,7 +28,7 @@ public class StressClientTest {
 
     @Test
     public void testReceivingAndSending() throws Exception {
-        StressClient client = new StressClient("localhost", "8888", "100", new StubHttpRequest());
+        StressClient client = new StressClient("localhost", 8888, 100, new StubHttpRequest());
         TimeUnit.SECONDS.sleep(1);
 
         client.start();

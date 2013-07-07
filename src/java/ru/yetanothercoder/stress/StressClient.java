@@ -80,12 +80,12 @@ public class StressClient {
     private final int exec;
     private final int initRps;
 
-    public StressClient(String host, String port, String rps, RequestSource requestSource) {
+    public StressClient(String host, int port, int rps, RequestSource requestSource) {
 
         // params >>
-        this.host = registerParam("host", host);
-        this.port = valueOf(registerParam("port", port));
-        initRps = valueOf(registerParam("rps", rps));
+        this.host = host;
+        this.port = port;
+        initRps = rps;
         durationSec = valueOf(registerParam("seconds", "-1"));
 
         final int readTimeoutMs = valueOf(registerParam("read.ms", "3000"));
@@ -399,8 +399,8 @@ public class StressClient {
 
     public static void main(String[] args) throws Exception {
         final String host = args.length > 0 ? args[0] : "localhost";
-        final String port = args.length > 1 ? args[1] : "8080";
-        final String rps = args.length > 2 ? args[2] : "-1";
+        final int port = args.length > 1 ? Integer.valueOf(args[1]) : 8080;
+        final int rps = args.length > 2 ? valueOf(args[2]) : -1;
 
         Map<String, String> r = new HashMap<>();
         r.put("$browser","Mozilla/5.0");

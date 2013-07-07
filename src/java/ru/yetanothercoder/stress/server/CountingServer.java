@@ -138,8 +138,9 @@ public class CountingServer {
 
 
     public static void main(String[] args) throws Exception {
-        final int port = Integer.valueOf(System.getProperty("port",  "8080"));
-        final int delay = Integer.valueOf(System.getProperty("delay",  "100"));
+        final int port = args.length > 0 ? Integer.valueOf(args[0]) : 8080;
+        final int delay = args.length > 1 ? Integer.valueOf(args[1]) : 100;
+
         boolean debug = System.getProperty("debug") != null;
 
         final CountingServer server = new CountingServer(port, delay, MILLISECONDS, debug);
