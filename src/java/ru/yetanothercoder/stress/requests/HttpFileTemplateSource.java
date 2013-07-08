@@ -101,7 +101,9 @@ public class HttpFileTemplateSource implements RequestSource {
         int start;
         if (text == null || (start = text.indexOf(name)) < 0) return text;
 
-        return text.substring(0, start) + value + text.substring(start + name.length());
+        return new StringBuilder(text.substring(0, start))
+                .append(value)
+                .append(text.substring(start + name.length())).toString();
 
 
     }
