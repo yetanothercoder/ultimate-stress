@@ -35,9 +35,10 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
- * TCP/IP Stress Client based on Netty
+ * Stress Client based on Netty
+ * Schedulers requests, count stats, check for error and output all info to STDIN/STDERR
  *
- * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
+ * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
  */
 public class StressClient {
 
@@ -81,6 +82,15 @@ public class StressClient {
     private final int exec;
     private final int initRps;
 
+    /**
+     * Init client<br/>
+     * If rps param < 0, then the client tries to find a maximum rps available on current machine this time
+     *
+     * @param host target host
+     * @param port target port
+     * @param rps number of request per second, if <0 -
+     * @param requestSource request source iterator
+     */
     public StressClient(String host, int port, int rps, RequestSource requestSource) {
 
         // params >>

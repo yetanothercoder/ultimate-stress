@@ -1,0 +1,4 @@
+GET /my/app HTTP/1.1
+Host: $hp
+Connection: close
+User-Agent: $browser (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/$v
