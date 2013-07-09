@@ -3,8 +3,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <groupId>ru.yetanothercoder</groupId>
-    <artifactId>stress</artifactId>
-    <version>0.9-SNAPSHOT</version>
+    <artifactId>ultimate-stress</artifactId>
+    <version>0.9</version>
     <packaging>jar</packaging>
     <name>Ultimate Stress Tool</name>
     <description>Stress/Load testing framework with Ultimate Performance based on NIO</description>
@@ -16,20 +16,32 @@
         <testSourceDirectory>src/junits</testSourceDirectory>
 
         <plugins>
+
             <plugin>
-                <!-- This is for building it as single jar: $ mvn clean assembly:single -->
                 <artifactId>maven-assembly-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>ru.yetanothercoder.stress.StressClient</mainClass>
-                        </manifest>
-                    </archive>
-                    <descriptorRefs>
-                        <descriptorRef>jar-with-dependencies</descriptorRef>
-                    </descriptorRefs>
-                </configuration>
+                <executions>
+                    <execution>
+                        <id>jar-with-dependencies</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>single</goal>
+                        </goals>
+                        <configuration>
+                            <archive>
+                                <manifest>
+                                    <mainClass>ru.yetanothercoder.stress.StressClient</mainClass>
+                                </manifest>
+                            </archive>
+                            <descriptorRefs>
+                                <descriptorRef>jar-with-dependencies</descriptorRef>
+                            </descriptorRefs>
+                            <finalName>${project.artifactId}-${project.version}</finalName>
+                            <appendAssemblyId>false</appendAssemblyId>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
+
         </plugins>
 
         <pluginManagement>
