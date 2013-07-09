@@ -17,7 +17,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
- * @author Mikhail Baturov, 7/3/13 9:07 PM
+ * Http file request parser.
+ * It reads text files from specified dir in local filesystem and
+ * replaces placeholders in them on each request (except $hp, it's done once reading file)
+ *
+ * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
  */
 public class HttpFileTemplateSource implements RequestSource {
 
@@ -29,6 +33,14 @@ public class HttpFileTemplateSource implements RequestSource {
     private final AtomicInteger i = new AtomicInteger(0);
     private final List<Pair> replacementList = new CopyOnWriteArrayList<>();
 
+    /**
+     * Construct source, read file contents in memory
+     *
+     * @param path directory where request files
+     * @param filePrefix prefix for file names
+     * @param hostPort host and port
+     * @param replacements placeholder names with values which substitutes on each request
+     */
     public HttpFileTemplateSource(String path, String filePrefix, String hostPort, Map<String, String> replacements) {
         this.dir = new File(path);
         if (!dir.exists()) throw new IllegalArgumentException("Incorrect path: " + path);

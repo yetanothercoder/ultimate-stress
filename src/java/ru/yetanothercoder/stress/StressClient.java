@@ -371,7 +371,7 @@ public class StressClient {
         int newRps = (MILLION / newRate);
         int oldRps = (MILLION / oldRate);
 
-        System.err.printf("ERROR: reached port limit! Decreasing rps: %,d->%,d (rate: %,d->%,d micros)%n",
+        System.err.printf("ERROR: reached connection limit! Decreasing rps: %,d->%,d (rate: %,d->%,d micros)%n",
                 oldRps, newRps, oldRate, newRate);
 
         dynamicRate.set(newRate);
