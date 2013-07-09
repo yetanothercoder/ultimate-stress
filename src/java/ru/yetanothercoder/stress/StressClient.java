@@ -18,6 +18,7 @@ import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.stress.timer.PlainScheduler;
 import ru.yetanothercoder.stress.timer.Scheduler;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
@@ -175,6 +176,16 @@ public class StressClient {
     }
 
     public void start() throws InterruptedException {
+
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                if (!pause && e instanceof InternalError && e.getCause() instanceof FileNotFoundException) {
+                    processLimitErrors();
+                }
+            }
+        });
+
         if (sample > 0) {
             sampleRequests(Math.max(sample, MILLION));
         }
