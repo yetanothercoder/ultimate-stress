@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>ru.yetanothercoder</groupId>
     <artifactId>ultimate-stress</artifactId>
-    <version>0.9</version>
+    <version>0.9.1</version>
     <packaging>jar</packaging>
     <name>Ultimate Stress Tool</name>
     <description>Stress/Load testing framework with Ultimate Performance based on NIO</description>
