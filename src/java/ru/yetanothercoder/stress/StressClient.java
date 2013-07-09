@@ -99,8 +99,8 @@ public class StressClient {
         initRps = rps;
         durationSec = valueOf(registerParam("seconds", "-1"));
 
-        final int readTimeoutMs = valueOf(registerParam("read.ms", "3000"));
-        final int writeTimeoutMs = valueOf(registerParam("write.ms", "3000"));
+        final int readTimeoutMs = valueOf(registerParam("read.ms", "1000"));
+        final int writeTimeoutMs = valueOf(registerParam("write.ms", "1000"));
 
         exec = valueOf(registerParam("exec", "1"));
         sample = valueOf(registerParam("sample", "-1"));
@@ -111,8 +111,8 @@ public class StressClient {
             server = new CountingServer(this.port, 100, MILLISECONDS, debug);
         }
 
-        tuningFactor = Double.valueOf(registerParam("tfactor", "1.2"));
-        initialTuningFactor = Double.valueOf(registerParam("tfactor0", "1.1"));
+        tuningFactor = Double.valueOf(registerParam("tfactor", "1.1"));
+        initialTuningFactor = Double.valueOf(registerParam("tfactor0", "1.2"));
         // << params
 
         this.requestSource = requestSource;
