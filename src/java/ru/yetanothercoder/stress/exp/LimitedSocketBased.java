@@ -21,11 +21,7 @@ public class LimitedSocketBased {
     static void doRequest(String host, int port) {
         try (Socket s = new Socket(host, port)) {
             PrintWriter pw = new PrintWriter(s.getOutputStream());
-            pw.println("GET / HTTP/1.1");
-            pw.println("Host: " + host);
-            pw.println();
-            pw.println();
-            pw.flush();
+            pw.printf("GET / HTTP/1.1%nHost: %s%n%n", host).flush();
             BufferedReader br = new BufferedReader(new InputStreamReader(s.getInputStream()));
             String t;
             while ((t = br.readLine()) != null) {
