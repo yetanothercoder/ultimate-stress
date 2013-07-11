@@ -35,6 +35,7 @@ public class LimitedSocketBased {
                 if (t.length() == 0) break;
             }
             br.close();
+            s.close();
         } catch (Exception ignore) {
             errors.incrementAndGet();
             return;
@@ -45,7 +46,7 @@ public class LimitedSocketBased {
     public static void main(String[] args) throws IOException, ClassNotFoundException {
         startStatEverySec();
 
-        int N = 1000;
+        int N = 10000;
         Thread[] threads = new Thread[N];
 
         for (int i = 0; i < N; i++) {
