@@ -15,13 +15,11 @@ import static java.util.concurrent.TimeUnit.SECONDS;
  */
 public class LimitedSocketBased {
 
-    static AtomicInteger sent = new AtomicInteger(0);
-    static AtomicInteger errors = new AtomicInteger(0);
+    final static AtomicInteger sent = new AtomicInteger(0);
+    final static AtomicInteger errors = new AtomicInteger(0);
 
     static void doRequest(String host, int port) {
-        String result = "";
-        try {
-            Socket s = new Socket(host, port);
+        try (Socket s = new Socket(host, port)) {
             PrintWriter pw = new PrintWriter(s.getOutputStream());
             pw.println("GET / HTTP/1.1");
             pw.println("Host: " + host);
@@ -34,13 +32,12 @@ public class LimitedSocketBased {
 //                System.out.println(t);
                 if (t.length() == 0) break;
             }
+            sent.incrementAndGet();
             br.close();
-            s.close();
         } catch (Exception ignore) {
             errors.incrementAndGet();
-            return;
         }
-        sent.incrementAndGet();
+
     }
 
     public static void main(String[] args) throws IOException, ClassNotFoundException {
