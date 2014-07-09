@@ -39,4 +39,16 @@ public class StressClientTest {
 
         Assert.assertTrue(client.getSentTotal() - server.total.get() < 5);
     }
+
+    @Test
+    public void testYa() throws Exception {
+        StressClient client = new StressClient("ya.ru", 80, 10, new StubHttpRequest());
+        TimeUnit.SECONDS.sleep(1);
+
+        client.start();
+        TimeUnit.SECONDS.sleep(1);
+
+        client.stop();
+        TimeUnit.SECONDS.sleep(1);
+    }
 }
