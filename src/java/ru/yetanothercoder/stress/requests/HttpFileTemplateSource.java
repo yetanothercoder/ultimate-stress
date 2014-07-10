@@ -93,20 +93,28 @@ public class HttpFileTemplateSource implements RequestSource {
 
     @Override
     public ChannelBuffer next() {
+        String tpl = nextTemplate();
+        return serializeResponse(replaceOnEachRequest(tpl));
+    }
+
+    protected String nextTemplate() {
         int index = i.getAndIncrement() % templates.size();
-        String tpl = templates.get(index);
-        return processOnEachRequest(tpl);
+        return templates.get(index);
     }
 
     public void addReplacement(String name, String value) {
         replacementList.add(new Pair(name, value));
     }
 
-    protected ChannelBuffer processOnEachRequest(String template) {
+    protected String replaceOnEachRequest(String template) {
         for (Pair pair : replacementList) {
             template = fastReplace(template, pair.name, pair.value);
         }
-        return ChannelBuffers.wrappedBuffer(template.getBytes(UTF_8));
+        return template;
+    }
+
+    private ChannelBuffer serializeResponse(String response) {
+        return ChannelBuffers.wrappedBuffer(response.getBytes(UTF_8));
     }
 
     private String fastReplace(String text, String name, String value) {
