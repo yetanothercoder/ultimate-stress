@@ -113,11 +113,11 @@ public class HttpFileTemplateSource implements RequestSource {
         return template;
     }
 
-    private ChannelBuffer serializeResponse(String response) {
+    protected ChannelBuffer serializeResponse(String response) {
         return ChannelBuffers.wrappedBuffer(response.getBytes(UTF_8));
     }
 
-    private String fastReplace(String text, String name, String value) {
+    public static String fastReplace(String text, String name, String value) {
         int start;
         if (text == null || (start = text.indexOf(name)) < 0) return text;
 

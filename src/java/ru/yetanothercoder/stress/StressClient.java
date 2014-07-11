@@ -239,6 +239,17 @@ public class StressClient {
                 }
             }, durationSec, SECONDS);
         }
+
+        enableStoppingOnShutdown();
+    }
+
+    private void enableStoppingOnShutdown() {
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                StressClient.this.stop();
+            }
+        });
     }
 
     private boolean checkConnection() {
@@ -430,12 +441,5 @@ public class StressClient {
         HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
         final StressClient client = new StressClient(host, port, rps, reqSrc);
         client.start();
-
-        Runtime.getRuntime().addShutdownHook(new Thread() {
-            @Override
-            public void run() {
-                client.stop();
-            }
-        });
     }
 }
