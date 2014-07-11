@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 /**
@@ -55,6 +56,12 @@ public class HttpFileTemplateSource implements RequestSource {
         } catch (IOException e) {
             throw new IllegalArgumentException("failed reading files from " + dir.getAbsolutePath(), e);
         }
+
+        if (templates.size() == 0) {
+            throw new IllegalArgumentException(format(
+                    "no templates found in `%s` with prefix `%s`", dir.getAbsolutePath(), prefix));
+        }
+
         this.hostPort = hostPort;
     }
 
