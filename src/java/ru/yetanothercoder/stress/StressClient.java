@@ -13,6 +13,7 @@ import org.jboss.netty.util.HashedWheelTimer;
 import ru.yetanothercoder.stress.requests.HttpFileTemplateSource;
 import ru.yetanothercoder.stress.requests.RequestSource;
 import ru.yetanothercoder.stress.server.CountingServer;
+import ru.yetanothercoder.stress.stat.Metric;
 import ru.yetanothercoder.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.stress.timer.PlainScheduler;
@@ -81,6 +82,22 @@ public class StressClient {
     private final int sample;
     private final int exec;
     private final int initRps;
+
+    private final Metric responseStat = new Metric("Summary Response");
+
+    public static void main(String[] args) throws Exception {
+        final String host = args.length > 0 ? args[0] : "localhost";
+        final int port = args.length > 1 ? Integer.valueOf(args[1]) : 8080;
+        final int rps = args.length > 2 ? valueOf(args[2]) : -1;
+
+        Map<String, String> r = new HashMap<>();
+        r.put("$browser","Mozilla/5.0");
+        r.put("$v","11.0");
+
+        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
+        final StressClient client = new StressClient(host, port, rps, reqSrc);
+        client.start();
+    }
 
     /**
      * Init client<br/>
@@ -235,7 +252,7 @@ public class StressClient {
                 @Override
                 public void run() {
                     System.out.printf("duration %s seconds elapsed, exiting...%n", durationSec);
-                    System.exit(0);
+                    System.exit(0); // shutdown hook should run
                 }
             }, durationSec, SECONDS);
         }
@@ -247,7 +264,7 @@ public class StressClient {
         Runtime.getRuntime().addShutdownHook(new Thread() {
             @Override
             public void run() {
-                StressClient.this.stop();
+                StressClient.this.stop(true);
             }
         });
     }
@@ -298,7 +315,11 @@ public class StressClient {
 
     }
 
-    public void stop() {
+    public void stop(boolean showSummaryStat) {
+        if (showSummaryStat) {
+            System.out.printf("STAT: %s%n", responseStat.calculateAndReset());
+        }
+
         System.out.printf("client `%s` stopping...%n", name);
 
         requestExecutor.shutdownNow();
@@ -311,64 +332,6 @@ public class StressClient {
 
     public int getSentTotal() {
         return total.get();
-    }
-
-    private class StressClientHandler extends SimpleChannelUpstreamHandler {
-        @Override
-        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
-            if (pause) {
-                e.getChannel().close();
-                return;
-            }
-
-            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
-            if (print) {
-                System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
-            }
-            received.incrementAndGet();
-        }
-
-        @Override
-        public void channelConnected(ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
-            if (pause) {
-                e.getChannel().close();
-                return;
-            }
-            requestExecutor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    e.getChannel().write(requestSource.next());
-                }
-            });
-
-            sent.incrementAndGet();
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
-            e.getChannel().close();
-
-            Throwable exc = e.getCause();
-
-            if (exc instanceof ConnectTimeoutException ||
-                    exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
-                te.incrementAndGet();
-            } else if (exc instanceof BindException) {
-                be.incrementAndGet();
-                processLimitErrors();
-            } else if (exc instanceof ConnectException) {
-                ce.incrementAndGet();
-                processLimitErrors();
-            } else if (exc instanceof IOException) {
-                ie.incrementAndGet();
-            } else {
-                nn.incrementAndGet();
-            }
-
-            if (debug) {
-                exc.printStackTrace(System.err);
-            }
-        }
     }
 
     private void processLimitErrors() {
@@ -429,17 +392,75 @@ public class StressClient {
     }
 
 
-    public static void main(String[] args) throws Exception {
-        final String host = args.length > 0 ? args[0] : "localhost";
-        final int port = args.length > 1 ? Integer.valueOf(args[1]) : 8080;
-        final int rps = args.length > 2 ? valueOf(args[2]) : -1;
 
-        Map<String, String> r = new HashMap<>();
-        r.put("$browser","Mozilla/5.0");
-        r.put("$v","11.0");
 
-        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
-        final StressClient client = new StressClient(host, port, rps, reqSrc);
-        client.start();
+
+
+
+
+    private class StressClientHandler extends SimpleChannelUpstreamHandler {
+
+        @Override
+        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+            if (pause) {
+                e.getChannel().close();
+                return;
+            }
+
+            Long start = (Long)ctx.getAttachment();
+            if (start != null) {
+                responseStat.register(System.currentTimeMillis() - start);
+            }
+
+            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
+            if (print) {
+                System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
+            }
+            received.incrementAndGet();
+        }
+
+        @Override
+        public void channelConnected(final ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
+            if (pause) {
+                e.getChannel().close();
+                return;
+            }
+            requestExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    ChannelBuffer req = requestSource.next();
+                    ctx.setAttachment(System.currentTimeMillis());
+                    e.getChannel().write(req);
+                }
+            });
+
+            sent.incrementAndGet();
+        }
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+            e.getChannel().close();
+
+            Throwable exc = e.getCause();
+
+            if (exc instanceof ConnectTimeoutException ||
+                    exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
+                te.incrementAndGet();
+            } else if (exc instanceof BindException) {
+                be.incrementAndGet();
+                processLimitErrors();
+            } else if (exc instanceof ConnectException) {
+                ce.incrementAndGet();
+                processLimitErrors();
+            } else if (exc instanceof IOException) {
+                ie.incrementAndGet();
+            } else {
+                nn.incrementAndGet();
+            }
+
+            if (debug) {
+                exc.printStackTrace(System.err);
+            }
+        }
+
     }
 }

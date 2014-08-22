@@ -34,7 +34,7 @@ public class StressClientTest {
         client.start();
         TimeUnit.SECONDS.sleep(3);
 
-        client.stop();
+        client.stop(true);
         TimeUnit.SECONDS.sleep(1);
 
         Assert.assertTrue(client.getSentTotal() - server.total.get() < 5);
@@ -46,9 +46,6 @@ public class StressClientTest {
         TimeUnit.SECONDS.sleep(1);
 
         client.start();
-        TimeUnit.SECONDS.sleep(1);
-
-        client.stop();
         TimeUnit.SECONDS.sleep(1);
     }
 }

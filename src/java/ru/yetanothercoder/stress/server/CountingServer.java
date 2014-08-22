@@ -85,6 +85,17 @@ public class CountingServer {
                 }
             }
         }, 0, 1, TimeUnit.SECONDS);
+
+        enableStoppingOnShutdown();
+    }
+
+    private void enableStoppingOnShutdown() {
+        Runtime.getRuntime().addShutdownHook(new Thread() {
+            @Override
+            public void run() {
+                CountingServer.this.stop();
+            }
+        });
     }
 
     public void stop() {
