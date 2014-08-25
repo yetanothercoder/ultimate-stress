@@ -52,6 +52,7 @@ public class StressClient {
     private final AtomicInteger sent = new AtomicInteger(0);
     private final AtomicInteger received = new AtomicInteger(0);
     private final AtomicInteger total = new AtomicInteger(0);
+    private final AtomicInteger receivedBytes = new AtomicInteger(0), sentBytes = new AtomicInteger(0);
     private final AtomicInteger te = new AtomicInteger(0);
     private final AtomicInteger be = new AtomicInteger(0);
     private final AtomicInteger ce = new AtomicInteger(0);
@@ -76,6 +77,7 @@ public class StressClient {
     private final String host;
     private final int port;
     private final int durationSec;
+    private volatile long started;
 
     private final Map<String, String> config = new LinkedHashMap<>();
     private CountingServer server = null;
@@ -233,7 +235,7 @@ public class StressClient {
             System.exit(0);
         }
 
-
+        started = System.currentTimeMillis();
         scheduler.startAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -244,7 +246,7 @@ public class StressClient {
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                showStats();
+                printPeriodicStats();
 
             }
         }, 0, 1, SECONDS);
@@ -282,7 +284,7 @@ public class StressClient {
         return false;
     }
 
-    private void showStats() {
+    private void printPeriodicStats() {
         int conn = connected.get();
         if (dynamicRate.get() > 1) {
             connected.set(0);
@@ -323,23 +325,29 @@ public class StressClient {
     public void stop(boolean showSummaryStat) {
         if (stopped) return;
 
-        if (showSummaryStat) {
-            printSummaryStat();
-        }
-
         System.out.printf("client `%s` stopping...%n", name);
 
         requestExecutor.shutdownNow();
         scheduler.shutdown();
         hwTimer.stop();
-        statExecutor.shutdownNow();
+        statExecutor.shutdown();
         if (server != null) server.stop();
         bootstrap.shutdown();
 
         stopped = true;
+
+        if (showSummaryStat) {
+            printSummaryStat();
+        }
     }
 
     private void printSummaryStat() {
+        long totalDurationSec = MILLISECONDS.toSeconds(System.currentTimeMillis() - started);
+
+        double receivedMb = receivedBytes.get() / 1e6;
+        double sentMb = sentBytes.get() / 1e6;
+
+        System.out.printf("STAT: %,d requests in %,d sec, sent %,.2f MB, received %,.2f MB, RPS=%s%n", total.get(), totalDurationSec, sentMb, receivedMb, total.get() / totalDurationSec);
         System.out.printf("STAT: %s, %s%n", responseSummary.calculateAndReset(), rpsStat.calculateAndReset());
     }
 
@@ -420,6 +428,7 @@ public class StressClient {
             }
 
             ChannelBuffer resp = (ChannelBuffer) e.getMessage();
+            receivedBytes.addAndGet(resp.capacity());
             if (print) {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
@@ -438,6 +447,8 @@ public class StressClient {
                     ChannelBuffer req = requestSource.next();
                     ctx.setAttachment(System.currentTimeMillis());
                     e.getChannel().write(req);
+
+                    sentBytes.addAndGet(req.capacity());
                 }
             });
 
