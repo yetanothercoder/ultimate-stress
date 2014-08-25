@@ -42,6 +42,8 @@ public class CountingServer {
     private final Random r = new Random();
     private ServerBootstrap bootstrap;
 
+    private volatile boolean stopped = false;
+
     public CountingServer(int port) {
         this(port, -1, null, false);
     }
@@ -99,10 +101,14 @@ public class CountingServer {
     }
 
     public void stop() {
+        if (stopped) return;
+
         System.out.println("SERVER: stopping...");
 
         bootstrap.shutdown();
         hwTimer.stop();
+
+        stopped = true;
     }
 
     private class CountingHandler extends SimpleChannelUpstreamHandler {

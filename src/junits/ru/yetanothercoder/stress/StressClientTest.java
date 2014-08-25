@@ -1,7 +1,7 @@
 package ru.yetanothercoder.stress;
 
-import junit.framework.Assert;
 import org.junit.After;
+import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import ru.yetanothercoder.stress.requests.StubHttpRequest;
@@ -43,9 +43,10 @@ public class StressClientTest {
     @Test
     public void testYa() throws Exception {
         StressClient client = new StressClient("ya.ru", 80, 10, new StubHttpRequest());
-        TimeUnit.SECONDS.sleep(1);
-
         client.start();
-        TimeUnit.SECONDS.sleep(1);
+
+        TimeUnit.SECONDS.sleep(2);
+
+        client.stop(true);
     }
 }

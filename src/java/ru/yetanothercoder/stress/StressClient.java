@@ -71,7 +71,7 @@ public class StressClient {
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
-    private volatile boolean pause = false;
+    private volatile boolean pause = false, stopped = false;
 
     private final String host;
     private final int port;
@@ -83,7 +83,8 @@ public class StressClient {
     private final int exec;
     private final int initRps;
 
-    private final Metric responseStat = new Metric("Summary Response");
+    private final Metric responseSummary = new Metric("Summary Response");
+    private final Metric rpsStat = new Metric("RPS");
 
     public static void main(String[] args) throws Exception {
         final String host = args.length > 0 ? args[0] : "localhost";
@@ -91,8 +92,8 @@ public class StressClient {
         final int rps = args.length > 2 ? valueOf(args[2]) : -1;
 
         Map<String, String> r = new HashMap<>();
-        r.put("$browser","Mozilla/5.0");
-        r.put("$v","11.0");
+        r.put("$browser", "Mozilla/5.0");
+        r.put("$v", "11.0");
 
         HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
         final StressClient client = new StressClient(host, port, rps, reqSrc);
@@ -103,9 +104,9 @@ public class StressClient {
      * Init client<br/>
      * If rps param < 0, then the client tries to find a maximum rps available on current machine this time
      *
-     * @param host target host
-     * @param port target port
-     * @param rps number of request per second, if <0 -
+     * @param host          target host
+     * @param port          target port
+     * @param rps           number of request per second, if <0 -
      * @param requestSource request source iterator
      */
     public StressClient(String host, int port, int rps, RequestSource requestSource) {
@@ -217,8 +218,9 @@ public class StressClient {
             sampleRequests(Math.max(sample, MILLION));
         }
 
+        int initRps = MILLION / dynamicRate.get();
         System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config: %s%n",
-                name, addr, MILLION / dynamicRate.get(), dynamicRate.get(), config);
+                name, addr, initRps, dynamicRate.get(), config);
 
         if (server != null) {
             server.start();
@@ -252,7 +254,8 @@ public class StressClient {
                 @Override
                 public void run() {
                     System.out.printf("duration %s seconds elapsed, exiting...%n", durationSec);
-                    System.exit(0); // shutdown hook should run
+                    StressClient.this.stop(true);
+                    System.exit(0);
                 }
             }, durationSec, SECONDS);
         }
@@ -284,8 +287,10 @@ public class StressClient {
         if (dynamicRate.get() > 1) {
             connected.set(0);
         }
-        int sentSoFar = sent.getAndSet(0);
+        final int sentSoFar = sent.getAndSet(0);
         total.addAndGet(sentSoFar);
+        rpsStat.register(sentSoFar);
+
         System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
                 sentSoFar,
                 received.getAndSet(0),
@@ -316,8 +321,10 @@ public class StressClient {
     }
 
     public void stop(boolean showSummaryStat) {
+        if (stopped) return;
+
         if (showSummaryStat) {
-            System.out.printf("STAT: %s%n", responseStat.calculateAndReset());
+            printSummaryStat();
         }
 
         System.out.printf("client `%s` stopping...%n", name);
@@ -328,6 +335,12 @@ public class StressClient {
         statExecutor.shutdownNow();
         if (server != null) server.stop();
         bootstrap.shutdown();
+
+        stopped = true;
+    }
+
+    private void printSummaryStat() {
+        System.out.printf("STAT: %s, %s%n", responseSummary.calculateAndReset(), rpsStat.calculateAndReset());
     }
 
     public int getSentTotal() {
@@ -382,7 +395,7 @@ public class StressClient {
             ChannelBuffer request = requestSource.next();
             total += System.nanoTime() - t0;
 
-            sampleAgainstJitOpt[ new Random().nextInt(1000) ] = request;
+            sampleAgainstJitOpt[new Random().nextInt(1000)] = request;
         }
         long requestNs = total / sampleSize;
         System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
@@ -390,12 +403,6 @@ public class StressClient {
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
         System.out.printf("random sample: %n%s%n%n", randomRequest);
     }
-
-
-
-
-
-
 
 
     private class StressClientHandler extends SimpleChannelUpstreamHandler {
@@ -407,9 +414,9 @@ public class StressClient {
                 return;
             }
 
-            Long start = (Long)ctx.getAttachment();
+            Long start = (Long) ctx.getAttachment();
             if (start != null) {
-                responseStat.register(System.currentTimeMillis() - start);
+                responseSummary.register(System.currentTimeMillis() - start);
             }
 
             ChannelBuffer resp = (ChannelBuffer) e.getMessage();
@@ -436,6 +443,7 @@ public class StressClient {
 
             sent.incrementAndGet();
         }
+
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
             e.getChannel().close();
