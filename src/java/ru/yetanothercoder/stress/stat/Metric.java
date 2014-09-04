@@ -1,5 +1,8 @@
 package ru.yetanothercoder.stress.stat;
 
+import net.jcip.annotations.NotThreadSafe;
+import net.jcip.annotations.ThreadSafe;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -7,9 +10,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * @ThreadSafe
- */
+@ThreadSafe
 public class Metric {
     public final String name;
     private final Queue<Integer> times = new ConcurrentLinkedQueue<>();
@@ -19,8 +20,8 @@ public class Metric {
         this.name = name;
     }
 
-    public boolean register(long ms) {
-        if (times.add((int) ms)) {
+    public boolean register(long v) {
+        if (times.add((int) v)) {
             quickSize.incrementAndGet();
             return true;
         }
@@ -29,10 +30,10 @@ public class Metric {
 
     public MetricResults calculateAndReset() {
         int size = quickSize.getAndSet(0);
-        if (size == 0) return null;
+        MetricResults result = new MetricResults(name, size);
+        if (size == 0) return result;
 
         List<Integer> snapshot = new ArrayList<>(size);
-        MetricResults result = new MetricResults(name, size);
         while (size-- > 0) {
             int time = times.remove();
             result.av += time;
@@ -49,11 +50,13 @@ public class Metric {
         int p50 = (int) (0.50 * snapshot.size());
 
         int std = 0;
-        int max = 0;
+        int max = Integer.MIN_VALUE, min = Integer.MAX_VALUE;
         for (int i = 0; i < snapshot.size(); i++) {
             int time = snapshot.get(i);
 
             if (time > max) max = time;
+            if (time < min) min = time;
+
 
             std += Math.pow(time - result.av, 2);
 
@@ -76,15 +79,17 @@ public class Metric {
         }
         result.std = snapshot.size() < 2 ? 0 : (int) Math.sqrt(std / (snapshot.size() - 1));
         result.max = max;
+        result.min = min;
 
         return result;
     }
 
+    @NotThreadSafe
     public class MetricResults {
-        final String name;
-        final int size;
-        int p50 = -1, p75 = -1, p90 = -1, p99 = -1, av = 0;
-        int std = 0, max;
+        public final String name;
+        public final int size;
+        public int p50 = -1, p75 = -1, p90 = -1, p99 = -1, av = 0;
+        public int std, max, min;
 
         public MetricResults(String name, int size) {
             this.name = name;
@@ -96,7 +101,7 @@ public class Metric {
             return name + ",ms{" +
                     "av=" + av +
                     ",std=" + std +
-                    ",max=" + max +
+                    ",min/max=" + min + "/" + max +
                     ",%=" + p50 + "/" + p75 + "/" + p90 + "/" + p99 +
                     ",qs=" + quickSize.get() + "/" + size +
                     "}";

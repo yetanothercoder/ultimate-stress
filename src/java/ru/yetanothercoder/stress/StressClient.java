@@ -18,6 +18,7 @@ import ru.yetanothercoder.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.stress.timer.PlainScheduler;
 import ru.yetanothercoder.stress.timer.Scheduler;
+import ru.yetanothercoder.stress.utils.DurationFormatter;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -44,6 +45,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 public class StressClient {
 
     public static final int MILLION = 1000000;
+    static final int THREADS = Runtime.getRuntime().availableProcessors();
+
 
     private final RequestSource requestSource;
     private final SocketAddress addr;
@@ -66,7 +69,7 @@ public class StressClient {
     private String name;
     private final HashedWheelTimer hwTimer;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(THREADS);
     private final Scheduler scheduler;
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
@@ -86,7 +89,8 @@ public class StressClient {
     private final int initRps;
 
     private final Metric responseSummary = new Metric("Summary Response");
-    private final Metric rpsStat = new Metric("RPS");
+    private final Metric rpsStat = new Metric("Req/s");
+    private final Metric connStat = new Metric("Conn/s");
 
     public static void main(String[] args) throws Exception {
         final String host = args.length > 0 ? args[0] : "localhost";
@@ -287,6 +291,7 @@ public class StressClient {
     private void printPeriodicStats() {
         int conn = connected.get();
         if (dynamicRate.get() > 1) {
+            connStat.register(conn);
             connected.set(0);
         }
         final int sentSoFar = sent.getAndSet(0);
@@ -342,13 +347,37 @@ public class StressClient {
     }
 
     private void printSummaryStat() {
-        long totalDurationSec = MILLISECONDS.toSeconds(System.currentTimeMillis() - started);
+        long totalMs = System.currentTimeMillis() - started;
+        long totalDurationSec = MILLISECONDS.toSeconds(totalMs);
 
         double receivedMb = receivedBytes.get() / 1e6;
         double sentMb = sentBytes.get() / 1e6;
 
-        System.out.printf("STAT: %,d requests in %,d sec, sent %,.2f MB, received %,.2f MB, RPS=%s%n", total.get(), totalDurationSec, sentMb, receivedMb, total.get() / totalDurationSec);
-        System.out.printf("STAT: %s, %s%n", responseSummary.calculateAndReset(), rpsStat.calculateAndReset());
+        System.out.printf("STAT: %,d requests in %,d sec, sent %,.2f MB, received %,.2f MB, RPS~%s%n", total.get(), totalDurationSec, sentMb, receivedMb, total.get() / totalDurationSec);
+        Metric.MetricResults connStats = connStat.calculateAndReset();
+        System.out.printf("STAT: %s, %s, %s%n",
+                responseSummary.calculateAndReset(),
+                rpsStat.calculateAndReset(),
+                connStats);
+
+        System.out.printf(
+                "Finished stress @ %s:%s for %s\n" +
+                        "  Used %d-%d threads and ~%d connection per sec\n" +
+                        "  Thread Stats     Avg      Stdev     Max   +/- Stdev\n" +
+                        "    Latency      815.75ms   85.75ms   1.34s    75.00%%\n" +
+                        "    Req/Sec         22.00      2.42   26.00     65.57%%\n" +
+                        "  Latency Distribution\n" +
+                        "     50%%  799.06ms\n" +
+                        "     75%%  851.40ms\n" +
+                        "     90%%  950.45ms\n" +
+                        "     99%%    1.05s\n" +
+                        "  3806 requests in 22.00s, 3.14MB read\n" +
+                        "Requests/sec:    172.98\n" +
+                        "Transfer/sec:    146.12KB",
+
+                host, port, DurationFormatter.format(totalMs),
+                THREADS, THREADS * 2, connStats.p50
+        );
     }
 
     public int getSentTotal() {
