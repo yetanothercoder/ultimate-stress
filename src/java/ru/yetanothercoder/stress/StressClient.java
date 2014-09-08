@@ -18,7 +18,7 @@ import ru.yetanothercoder.stress.timer.ExecutorScheduler;
 import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
 import ru.yetanothercoder.stress.timer.PlainScheduler;
 import ru.yetanothercoder.stress.timer.Scheduler;
-import ru.yetanothercoder.stress.utils.DurationFormatter;
+import ru.yetanothercoder.stress.utils.Utils;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -35,6 +35,7 @@ import static java.lang.Integer.valueOf;
 import static java.lang.System.getProperty;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
+import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
 
 /**
  * Stress Client based on Netty
@@ -46,11 +47,14 @@ public class StressClient {
 
     public static final int MILLION = 1000000;
     static final int THREADS = Runtime.getRuntime().availableProcessors();
+    public static final int HTTP_STATUS_WIDTH = 20;
 
 
     private final RequestSource requestSource;
     private final SocketAddress addr;
     private final ClientBootstrap bootstrap;
+
+    // TODO: move these counters to separate entity
     private final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger sent = new AtomicInteger(0);
     private final AtomicInteger received = new AtomicInteger(0);
@@ -75,6 +79,7 @@ public class StressClient {
     private final StressClientHandler stressClientHandler = new StressClientHandler();
     private final boolean print;
     private final boolean debug;
+    private final boolean httpErrors;
     private volatile boolean pause = false, stopped = false;
 
     private final String host;
@@ -89,6 +94,8 @@ public class StressClient {
     private final int initRps;
 
     private final Metric responseSummary = new Metric("Summary Response");
+    private final Metric successResp = new Metric("Success Responses");
+    private final Metric errorResp = new Metric("Error Responses");
     private final Metric rpsStat = new Metric("Req/s");
     private final Metric connStat = new Metric("Conn/s");
 
@@ -130,6 +137,7 @@ public class StressClient {
         sample = valueOf(registerParam("sample", "-1"));
         print = "1".equals(registerParam("print", "0"));
         debug = "1".equals(registerParam("debug", "0"));
+        httpErrors = "1".equals(registerParam("httpErrors", "0"));
 
         if ("1".equals(registerParam("server", "0"))) {
             server = new CountingServer(this.port, 100, MILLISECONDS, debug);
@@ -295,7 +303,6 @@ public class StressClient {
             connected.set(0);
         }
         final int sentSoFar = sent.getAndSet(0);
-        total.addAndGet(sentSoFar);
         rpsStat.register(sentSoFar);
 
         System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
@@ -353,31 +360,72 @@ public class StressClient {
         double receivedMb = receivedBytes.get() / 1e6;
         double sentMb = sentBytes.get() / 1e6;
 
-        System.out.printf("STAT: %,d requests in %,d sec, sent %,.2f MB, received %,.2f MB, RPS~%s%n", total.get(), totalDurationSec, sentMb, receivedMb, total.get() / totalDurationSec);
         Metric.MetricResults connStats = connStat.calculateAndReset();
-        System.out.printf("STAT: %s, %s, %s%n",
-                responseSummary.calculateAndReset(),
-                rpsStat.calculateAndReset(),
-                connStats);
+        Metric.MetricResults respStats = responseSummary.calculateAndReset();
+        Metric.MetricResults rpsStats = rpsStat.calculateAndReset();
+        long totalRps = respStats.size / totalDurationSec;
+
 
         System.out.printf(
-                "Finished stress @ %s:%s for %s\n" +
-                        "  Used %d-%d threads and ~%d connection per sec\n" +
-                        "  Thread Stats     Avg      Stdev     Max   +/- Stdev\n" +
-                        "    Latency      815.75ms   85.75ms   1.34s    75.00%%\n" +
-                        "    Req/Sec         22.00      2.42   26.00     65.57%%\n" +
-                        "  Latency Distribution\n" +
-                        "     50%%  799.06ms\n" +
-                        "     75%%  851.40ms\n" +
-                        "     90%%  950.45ms\n" +
-                        "     99%%    1.05s\n" +
-                        "  3806 requests in 22.00s, 3.14MB read\n" +
-                        "Requests/sec:    172.98\n" +
-                        "Transfer/sec:    146.12KB",
+                "%nFinished stress @ %s:%s for %s%n" +
+                        "  Used %d-%d threads and ~%d connection per sec%n" +
+                        "     STATS         AVG       STDEV         MAX %n" +
+                        "    Latency  %9s %11s %11s%n" +
+                        "    Req/Sec %9s %11s %11s%n" +
+                        "  Overall Latency Distribution%n" +
+                        "     50%% %10s%n" +
+                        "     75%% %10s%n" +
+                        "     90%% %10s%n" +
+                        "     99%% %10s%n",
 
-                host, port, DurationFormatter.format(totalMs),
-                THREADS, THREADS * 2, connStats.p50
+                host, port, formatLatency(totalMs),
+                THREADS, THREADS * 2, connStats.p50,
+                formatLatency(respStats.av), formatLatency(respStats.std), formatLatency(respStats.max),
+                rpsStats.av, rpsStats.std, rpsStats.max,
+                formatLatency(respStats.p50),
+                formatLatency(respStats.p75),
+                formatLatency(respStats.p90),
+                formatLatency(respStats.p99)
         );
+
+        if (httpErrors && respStats.size > 0) {
+            Metric.MetricResults successStats = successResp.calculateAndReset();
+            Metric.MetricResults errorStats = errorResp.calculateAndReset();
+            int successes = (int) (successStats.size * 1.0 / respStats.size * 100);
+            int errors = (int) (errorStats.size * 1.0 / respStats.size * 100);
+            System.out.printf(
+                    "  %d%% Success(2xx-3xx) Responses:%n" +
+                            "     50%% %10s%n" +
+                            "     75%% %10s%n" +
+                            "     90%% %10s%n" +
+                            "     99%% %10s%n" +
+                            "  %d%% Error(4xx-5xx) Responses:%n" +
+                            "     50%% %10s%n" +
+                            "     75%% %10s%n" +
+                            "     90%% %10s%n" +
+                            "     99%% %10s%n",
+
+                    successes,
+                    formatLatency(successStats.p50),
+                    formatLatency(successStats.p75),
+                    formatLatency(successStats.p90),
+                    formatLatency(successStats.p99),
+
+                    errors,
+                    formatLatency(errorStats.p50),
+                    formatLatency(errorStats.p75),
+                    formatLatency(errorStats.p90),
+                    formatLatency(errorStats.p99)
+            );
+
+            if (debug) System.err.printf("%nDEBUG, Metrics: %s, %s%n", successStats, errorStats);
+        }
+
+        System.out.printf("%nSUMMARY: %,d requests sent (%,d received) in %s, sent %,.2f MB, received %,.2f MB, RPS~%s%n",
+                total.get(), respStats.size, formatLatency(totalMs), sentMb, receivedMb, totalRps
+        );
+
+        if (debug) System.err.printf("%nDEBUG, Metrics: %s, %s, %s%n", respStats, rpsStats, connStats);
     }
 
     public int getSentTotal() {
@@ -452,16 +500,34 @@ public class StressClient {
             }
 
             Long start = (Long) ctx.getAttachment();
+            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
+
             if (start != null) {
-                responseSummary.register(System.currentTimeMillis() - start);
+                final long latency = System.currentTimeMillis() - start;
+                responseSummary.register(latency);
+
+                if (httpErrors) {
+                    countStatuses(resp, latency);
+                }
             }
 
-            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
             receivedBytes.addAndGet(resp.capacity());
             if (print) {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
+
+
             received.incrementAndGet();
+        }
+
+        private void countStatuses(ChannelBuffer resp, long latency) {
+            String statusLine = resp.toString(0, HTTP_STATUS_WIDTH, Charset.defaultCharset());
+            int status = Utils.parseStatus(statusLine);
+            if (status >= 200 && status < 400) {
+                successResp.register(latency);
+            } else if (status >= 400) {
+                errorResp.register(latency);
+            }
         }
 
         @Override
@@ -478,6 +544,7 @@ public class StressClient {
                     e.getChannel().write(req);
 
                     sentBytes.addAndGet(req.capacity());
+                    total.incrementAndGet();
                 }
             });
 

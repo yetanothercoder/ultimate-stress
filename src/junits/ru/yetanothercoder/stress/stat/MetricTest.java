@@ -45,7 +45,7 @@ public class MetricTest {
         assertTrue(result.p90 == 900);
         assertTrue(result.p99 == 990);
 
-        Assert.assertNull(stat.calculateAndReset());
+        Assert.assertTrue(stat.calculateAndReset().size == 0);
 
         stat.register(0);
         stat.register(0);

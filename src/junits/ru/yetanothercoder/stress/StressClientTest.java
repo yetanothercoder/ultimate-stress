@@ -45,7 +45,7 @@ public class StressClientTest {
         StressClient client = new StressClient("ya.ru", 80, 10, new StubHttpRequest());
         client.start();
 
-        TimeUnit.SECONDS.sleep(10);
+        TimeUnit.SECONDS.sleep(5);
 
         client.stop(true);
     }

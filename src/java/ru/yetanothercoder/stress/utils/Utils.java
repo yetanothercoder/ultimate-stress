@@ -1,12 +1,24 @@
 package ru.yetanothercoder.stress.utils;
 
-public class DurationFormatter {
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class Utils {
 
     final private static int second = 1_000;
     final private static int minute = 60;
     final private static int hour = 60;
 
-    public static String format(long ms) {
+    public static int parseStatus(String respLine) {
+        Pattern p = Pattern.compile("HTTP/1\\.[10]\\s+(\\d+)");
+        Matcher m = p.matcher(respLine);
+        if (m.find()) {
+            return Integer.parseInt(m.group(1));
+        }
+        return -1;
+    }
+
+    public static String formatLatency(long ms) {
         String result;
         ms = Math.abs(ms);
         if (ms > second) { // hours
