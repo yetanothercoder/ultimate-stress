@@ -33,9 +33,9 @@ public class HttpFileTemplateSourceTest {
         repl.put("$1", "11");
         repl.put("$2", "22");
 
-        HttpFileTemplateSource source = new HttpFileTemplateSource(tmpDir.getPath(), "http", "77", repl);
+        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(tmpDir.getPath(), "http", "77", repl);
 
-        String[] requests = new String[] {new String(source.next().array()), new String(source.next().array()), new String(source.next().array()), new String(source.next().array())};
+        String[] requests = new String[]{new String(source.next().array()), new String(source.next().array()), new String(source.next().array()), new String(source.next().array())};
 
         Arrays.sort(requests); // against OS random directory listings
 

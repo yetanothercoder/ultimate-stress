@@ -100,6 +100,9 @@ public class CountingServer {
         });
     }
 
+    /**
+     * TODO: add summary stat as in the Client and show it on stop
+     */
     public void stop() {
         if (stopped) return;
 

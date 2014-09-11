@@ -24,7 +24,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
  */
-public class HttpFileTemplateSource implements RequestSource {
+public class HttpFileTemplateGenerator implements RequestGenerator {
 
     public static final String HOSTPORT_PLACEHOLDER = "$hp";
 
@@ -37,12 +37,12 @@ public class HttpFileTemplateSource implements RequestSource {
     /**
      * Construct source, read file contents in memory
      *
-     * @param path directory where request files
-     * @param filePrefix prefix for file names
-     * @param hostPort host and port
+     * @param path         directory where request files
+     * @param filePrefix   prefix for file names
+     * @param hostPort     host and port
      * @param replacements placeholder names with values which substitutes on each request
      */
-    public HttpFileTemplateSource(String path, String filePrefix, String hostPort, Map<String, String> replacements) {
+    public HttpFileTemplateGenerator(String path, String filePrefix, String hostPort, Map<String, String> replacements) {
         this.dir = new File(path);
         if (!dir.exists()) throw new IllegalArgumentException("Incorrect path: " + path);
         this.prefix = filePrefix;

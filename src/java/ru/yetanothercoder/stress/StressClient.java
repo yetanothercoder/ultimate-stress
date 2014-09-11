@@ -10,13 +10,11 @@ import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.handler.timeout.WriteTimeoutException;
 import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
-import ru.yetanothercoder.stress.requests.HttpFileTemplateSource;
-import ru.yetanothercoder.stress.requests.RequestSource;
+import ru.yetanothercoder.stress.config.StressConfig;
+import ru.yetanothercoder.stress.requests.HttpFileTemplateGenerator;
 import ru.yetanothercoder.stress.server.CountingServer;
+import ru.yetanothercoder.stress.stat.CountersHolder;
 import ru.yetanothercoder.stress.stat.Metric;
-import ru.yetanothercoder.stress.timer.ExecutorScheduler;
-import ru.yetanothercoder.stress.timer.HashedWheelScheduler;
-import ru.yetanothercoder.stress.timer.PlainScheduler;
 import ru.yetanothercoder.stress.timer.Scheduler;
 import ru.yetanothercoder.stress.utils.Utils;
 
@@ -49,26 +47,12 @@ public class StressClient {
     static final int THREADS = Runtime.getRuntime().availableProcessors();
     public static final int HTTP_STATUS_WIDTH = 20;
 
-
-    private final RequestSource requestSource;
     private final SocketAddress addr;
     private final ClientBootstrap bootstrap;
 
-    // TODO: move these counters to separate entity
-    private final AtomicInteger connected = new AtomicInteger(0);
-    private final AtomicInteger sent = new AtomicInteger(0);
-    private final AtomicInteger received = new AtomicInteger(0);
-    private final AtomicInteger total = new AtomicInteger(0);
-    private final AtomicInteger receivedBytes = new AtomicInteger(0), sentBytes = new AtomicInteger(0);
-    private final AtomicInteger te = new AtomicInteger(0);
-    private final AtomicInteger be = new AtomicInteger(0);
-    private final AtomicInteger ce = new AtomicInteger(0);
-    private final AtomicInteger ie = new AtomicInteger(0);
-    private final AtomicInteger dynamicRate = new AtomicInteger(1);
+    private final CountersHolder ch = new CountersHolder();
 
-    private final AtomicInteger nn = new AtomicInteger(0);
-    private final double tuningFactor;
-    private final double initialTuningFactor;
+    private final AtomicInteger dynamicRate = new AtomicInteger(1);
 
     private String name;
     private final HashedWheelTimer hwTimer;
@@ -77,21 +61,15 @@ public class StressClient {
     private final Scheduler scheduler;
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
-    private final boolean print;
-    private final boolean debug;
-    private final boolean httpErrors;
+
     private volatile boolean pause = false, stopped = false;
 
-    private final String host;
-    private final int port;
-    private final int durationSec;
     private volatile long started;
 
-    private final Map<String, String> config = new LinkedHashMap<>();
+    private final Map<String, String> configMap = new LinkedHashMap<>();
+    private final StressConfig c;
     private CountingServer server = null;
-    private final int sample;
-    private final int exec;
-    private final int initRps;
+
 
     private final Metric responseSummary = new Metric("Summary Response");
     private final Metric successResp = new Metric("Success Responses");
@@ -108,63 +86,42 @@ public class StressClient {
         r.put("$browser", "Mozilla/5.0");
         r.put("$v", "11.0");
 
-        HttpFileTemplateSource reqSrc = new HttpFileTemplateSource(".", "http", host + ":" + port, r);
-        final StressClient client = new StressClient(host, port, rps, reqSrc);
+        HttpFileTemplateGenerator reqSrc = new HttpFileTemplateGenerator(".", "http", host + ":" + port, r);
+        StressConfig config = new StressConfig.Builder(host).
+                port(port).rps(rps).withRequestGenerator(reqSrc).
+                build();
+        final StressClient client = new StressClient(config);
         client.start();
     }
 
-    /**
-     * Init client<br/>
-     * If rps param < 0, then the client tries to find a maximum rps available on current machine this time
-     *
-     * @param host          target host
-     * @param port          target port
-     * @param rps           number of request per second, if <0 -
-     * @param requestSource request source iterator
-     */
-    public StressClient(String host, int port, int rps, RequestSource requestSource) {
-
-        // params >>
-        this.host = host;
-        this.port = port;
-        initRps = rps;
-        durationSec = valueOf(registerParam("seconds", "-1"));
-
-        final int readTimeoutMs = valueOf(registerParam("read.ms", "1000"));
-        final int writeTimeoutMs = valueOf(registerParam("write.ms", "1000"));
-
-        exec = valueOf(registerParam("exec", "1"));
-        sample = valueOf(registerParam("sample", "-1"));
-        print = "1".equals(registerParam("print", "0"));
-        debug = "1".equals(registerParam("debug", "0"));
-        httpErrors = "1".equals(registerParam("httpErrors", "0"));
-
-        if ("1".equals(registerParam("server", "0"))) {
-            server = new CountingServer(this.port, 100, MILLISECONDS, debug);
-        }
-
-        tuningFactor = Double.valueOf(registerParam("tfactor", "1.1"));
-        initialTuningFactor = Double.valueOf(registerParam("tfactor0", "1.2"));
-        // << params
-
-        this.requestSource = requestSource;
-        this.hwTimer = new HashedWheelTimer();
-        this.addr = new InetSocketAddress(this.host, this.port);
-
-        if (initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
-
-        if (initRps > 0) {
-            dynamicRate.set(MILLION / initRps);
-        }
-
-        scheduler = initMainExecutor();
-
-        bootstrap = initNetty(readTimeoutMs, writeTimeoutMs);
-
-        name = setName();
+    public StressClient(String host) {
+        this(new StressConfig.Builder(host).build());
     }
 
-    private String setName() {
+    public StressClient(StressConfig config) {
+        this.c = config;
+
+        if (c.server) {
+            server = new CountingServer(c.port, 100, MILLISECONDS, c.debug);
+        }
+
+        this.hwTimer = new HashedWheelTimer();
+        this.addr = new InetSocketAddress(c.host, c.port);
+
+        if (c.initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
+
+        if (c.initRps > 0) {
+            dynamicRate.set(MILLION / c.initRps);
+        }
+
+        scheduler = c.type.createScheduler();
+
+        bootstrap = initNetty(c.readTimeoutMs, c.writeTimeoutMs);
+
+        name = generateName();
+    }
+
+    private String generateName() {
         String name = "Client";
         try {
             name += "@" + InetAddress.getLocalHost().getHostName();
@@ -201,19 +158,9 @@ public class StressClient {
         return bootstrap;
     }
 
-    private Scheduler initMainExecutor() {
-        if (exec == 2) {
-            return new ExecutorScheduler();
-        } else if (exec == 3) {
-            return new PlainScheduler();
-        } else {
-            return new HashedWheelScheduler();
-        }
-    }
-
     private String registerParam(String name, String def) {
         String value = getProperty(name, def);
-        config.put(name, value);
+        configMap.put(name, value);
         return value;
     }
 
@@ -228,13 +175,13 @@ public class StressClient {
             }
         });
 
-        if (sample > 0) {
-            sampleRequests(Math.max(sample, MILLION));
+        if (c.sample > 0) {
+            sampleRequests(Math.max(c.sample, MILLION));
         }
 
         int initRps = MILLION / dynamicRate.get();
         System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config: %s%n",
-                name, addr, initRps, dynamicRate.get(), config);
+                name, addr, initRps, dynamicRate.get(), configMap);
 
         if (server != null) {
             server.start();
@@ -243,7 +190,7 @@ public class StressClient {
 
 
         if (!checkConnection()) {
-            System.err.printf("ERROR: no connection to %s:%,d%n", host, port);
+            System.err.printf("ERROR: no connection to %s:%,d%n", c.host, c.port);
             System.exit(0);
         }
 
@@ -263,15 +210,15 @@ public class StressClient {
             }
         }, 0, 1, SECONDS);
 
-        if (durationSec > 0) {
+        if (c.durationSec > 0) {
             statExecutor.schedule(new Runnable() {
                 @Override
                 public void run() {
-                    System.out.printf("duration %s seconds elapsed, exiting...%n", durationSec);
+                    System.out.printf("duration %s seconds elapsed, exiting...%n", c.durationSec);
                     StressClient.this.stop(true);
                     System.exit(0);
                 }
-            }, durationSec, SECONDS);
+            }, c.durationSec, SECONDS);
         }
 
         enableStoppingOnShutdown();
@@ -288,7 +235,7 @@ public class StressClient {
 
     private boolean checkConnection() {
         // java 6 style to handle such errors >>
-        try (Socket socket = new Socket(host, port)) {
+        try (Socket socket = new Socket(c.host, c.port)) {
             return socket.isConnected();
         } catch (IOException e) {
             // ignore
@@ -297,37 +244,37 @@ public class StressClient {
     }
 
     private void printPeriodicStats() {
-        int conn = connected.get();
+        int conn = ch.connected.get();
         if (dynamicRate.get() > 1) {
             connStat.register(conn);
-            connected.set(0);
+            ch.connected.set(0);
         }
-        final int sentSoFar = sent.getAndSet(0);
+        final int sentSoFar = ch.sent.getAndSet(0);
         rpsStat.register(sentSoFar);
 
         System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
                 sentSoFar,
-                received.getAndSet(0),
+                ch.received.getAndSet(0),
                 conn, dynamicRate.get(),
-                te.getAndSet(0),
-                be.getAndSet(0),
-                ce.getAndSet(0),
-                ie.getAndSet(0),
-                nn.getAndSet(0)
+                ch.te.getAndSet(0),
+                ch.be.getAndSet(0),
+                ch.ce.getAndSet(0),
+                ch.ie.getAndSet(0),
+                ch.nn.getAndSet(0)
         );
     }
 
     private void sendOne() {
         try {
             ChannelFuture future = bootstrap.connect(addr);
-            connected.incrementAndGet();
+            ch.connected.incrementAndGet();
         } catch (ChannelException e) {
             if (e.getCause() instanceof SocketException) {
                 processLimitErrors();
             } else {
-                nn.incrementAndGet();
+                ch.nn.incrementAndGet();
             }
-            if (debug) {
+            if (c.debug) {
                 e.printStackTrace(System.err);
             }
         }
@@ -357,8 +304,8 @@ public class StressClient {
         long totalMs = System.currentTimeMillis() - started;
         long totalDurationSec = MILLISECONDS.toSeconds(totalMs);
 
-        double receivedMb = receivedBytes.get() / 1e6;
-        double sentMb = sentBytes.get() / 1e6;
+        double receivedMb = ch.receivedBytes.get() / 1e6;
+        double sentMb = ch.sentBytes.get() / 1e6;
 
         Metric.MetricResults connStats = connStat.calculateAndReset();
         Metric.MetricResults respStats = responseSummary.calculateAndReset();
@@ -378,7 +325,7 @@ public class StressClient {
                         "     90%% %10s%n" +
                         "     99%% %10s%n",
 
-                host, port, formatLatency(totalMs),
+                c.host, c.port, formatLatency(totalMs),
                 THREADS, THREADS * 2, connStats.p50,
                 formatLatency(respStats.av), formatLatency(respStats.std), formatLatency(respStats.max),
                 rpsStats.av, rpsStats.std, rpsStats.max,
@@ -388,7 +335,7 @@ public class StressClient {
                 formatLatency(respStats.p99)
         );
 
-        if (httpErrors && respStats.size > 0) {
+        if (c.httpErrors && respStats.size > 0) {
             Metric.MetricResults successStats = successResp.calculateAndReset();
             Metric.MetricResults errorStats = errorResp.calculateAndReset();
             int successes = (int) (successStats.size * 1.0 / respStats.size * 100);
@@ -418,22 +365,22 @@ public class StressClient {
                     formatLatency(errorStats.p99)
             );
 
-            if (debug) System.err.printf("%nDEBUG, Metrics: %s, %s%n", successStats, errorStats);
+            if (c.debug) System.err.printf("%nDEBUG, Metrics: %s, %s%n", successStats, errorStats);
         }
 
         System.out.printf("%nSUMMARY: %,d requests sent (%,d received) in %s, sent %,.2f MB, received %,.2f MB, RPS~%s%n",
-                total.get(), respStats.size, formatLatency(totalMs), sentMb, receivedMb, totalRps
+                ch.total.get(), respStats.size, formatLatency(totalMs), sentMb, receivedMb, totalRps
         );
 
-        if (debug) System.err.printf("%nDEBUG, Metrics: %s, %s, %s%n", respStats, rpsStats, connStats);
+        if (c.debug) System.err.printf("%nDEBUG, Metrics: %s, %s, %s%n", respStats, rpsStats, connStats);
     }
 
     public int getSentTotal() {
-        return total.get();
+        return ch.total.get();
     }
 
     private void processLimitErrors() {
-        if (pause || (be.get() + ce.get() < 10)) return;
+        if (pause || (ch.be.get() + ch.ce.get() < 10)) return;
 
         pause = true;
 
@@ -457,12 +404,12 @@ public class StressClient {
     }
 
     private int tuneRate() {
-        return (int) Math.ceil(tuningFactor * dynamicRate.get());
+        return (int) Math.ceil(c.tuningFactor * dynamicRate.get());
     }
 
     private int calculateInitRate() {
-        int conn = connected.get();
-        return (int) initialTuningFactor * MILLION / conn;
+        int conn = ch.connected.get();
+        return (int) c.initialTuningFactor * MILLION / conn;
     }
 
     private void sampleRequests(final int sampleSize) {
@@ -477,7 +424,7 @@ public class StressClient {
             if (i % tenPercent == 0) System.out.printf(" %,d%%", ++p * 10);
 
             long t0 = System.nanoTime();
-            ChannelBuffer request = requestSource.next();
+            ChannelBuffer request = c.requestGenerator.next();
             total += System.nanoTime() - t0;
 
             sampleAgainstJitOpt[new Random().nextInt(1000)] = request;
@@ -506,18 +453,18 @@ public class StressClient {
                 final long latency = System.currentTimeMillis() - start;
                 responseSummary.register(latency);
 
-                if (httpErrors) {
+                if (c.httpErrors) {
                     countStatuses(resp, latency);
                 }
             }
 
-            receivedBytes.addAndGet(resp.capacity());
-            if (print) {
+            ch.receivedBytes.addAndGet(resp.capacity());
+            if (c.print) {
                 System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
 
 
-            received.incrementAndGet();
+            ch.received.incrementAndGet();
         }
 
         private void countStatuses(ChannelBuffer resp, long latency) {
@@ -539,16 +486,16 @@ public class StressClient {
             requestExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    ChannelBuffer req = requestSource.next();
+                    ChannelBuffer req = c.requestGenerator.next();
                     ctx.setAttachment(System.currentTimeMillis());
                     e.getChannel().write(req);
 
-                    sentBytes.addAndGet(req.capacity());
-                    total.incrementAndGet();
+                    ch.sentBytes.addAndGet(req.capacity());
+                    ch.total.incrementAndGet();
                 }
             });
 
-            sent.incrementAndGet();
+            ch.sent.incrementAndGet();
         }
 
         @Override
@@ -559,20 +506,20 @@ public class StressClient {
 
             if (exc instanceof ConnectTimeoutException ||
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
-                te.incrementAndGet();
+                ch.te.incrementAndGet();
             } else if (exc instanceof BindException) {
-                be.incrementAndGet();
+                ch.be.incrementAndGet();
                 processLimitErrors();
             } else if (exc instanceof ConnectException) {
-                ce.incrementAndGet();
+                ch.ce.incrementAndGet();
                 processLimitErrors();
             } else if (exc instanceof IOException) {
-                ie.incrementAndGet();
+                ch.ie.incrementAndGet();
             } else {
-                nn.incrementAndGet();
+                ch.nn.incrementAndGet();
             }
 
-            if (debug) {
+            if (c.debug) {
                 exc.printStackTrace(System.err);
             }
         }

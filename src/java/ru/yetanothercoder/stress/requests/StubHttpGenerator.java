@@ -8,7 +8,7 @@ import java.nio.charset.Charset;
 /**
  * @author Mikhail Baturov,  6/24/13 11:44 PM
  */
-public class StubHttpRequest implements RequestSource {
+public class StubHttpGenerator implements RequestGenerator {
     final String STUB = "GET /my/app HTTP/1.1\n" +
             "Host: magichost!\n" +
             "Connection: close\n" +

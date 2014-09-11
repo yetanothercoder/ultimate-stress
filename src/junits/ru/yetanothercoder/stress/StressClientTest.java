@@ -4,7 +4,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import ru.yetanothercoder.stress.requests.StubHttpRequest;
+import ru.yetanothercoder.stress.config.StressConfig;
 import ru.yetanothercoder.stress.server.CountingServer;
 
 import java.util.concurrent.TimeUnit;
@@ -28,7 +28,8 @@ public class StressClientTest {
 
     @Test
     public void testReceivingAndSending() throws Exception {
-        StressClient client = new StressClient("localhost", 8888, 100, new StubHttpRequest());
+        StressConfig config = new StressConfig.Builder("localhost").port(8888).rps(100).build();
+        StressClient client = new StressClient(config);
         TimeUnit.SECONDS.sleep(1);
 
         client.start();
@@ -42,7 +43,7 @@ public class StressClientTest {
 
     @Test
     public void testYa() throws Exception {
-        StressClient client = new StressClient("ya.ru", 80, 10, new StubHttpRequest());
+        StressClient client = new StressClient("ya.ru");
         client.start();
 
         TimeUnit.SECONDS.sleep(5);
