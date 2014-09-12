@@ -5,6 +5,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.PrintWriter;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -33,7 +34,7 @@ public class HttpFileTemplateSourceTest {
         repl.put("$1", "11");
         repl.put("$2", "22");
 
-        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(tmpDir.getPath(), "http", "77", repl);
+        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(Paths.get(tmpDir.getPath()), "http", "77", repl);
 
         String[] requests = new String[]{new String(source.next().array()), new String(source.next().array()), new String(source.next().array()), new String(source.next().array())};
 

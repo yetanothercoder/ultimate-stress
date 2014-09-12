@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,8 +43,8 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
      * @param hostPort     host and port
      * @param replacements placeholder names with values which substitutes on each request
      */
-    public HttpFileTemplateGenerator(String path, String filePrefix, String hostPort, Map<String, String> replacements) {
-        this.dir = new File(path);
+    public HttpFileTemplateGenerator(Path path, String filePrefix, String hostPort, Map<String, String> replacements) {
+        this.dir = path.toFile();
         if (!dir.exists()) throw new IllegalArgumentException("Incorrect path: " + path);
         this.prefix = filePrefix;
 

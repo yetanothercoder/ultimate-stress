@@ -1,14 +1,18 @@
 package ru.yetanothercoder.stress.config;
 
+import ru.yetanothercoder.stress.StressClient;
 import ru.yetanothercoder.stress.requests.RequestGenerator;
 import ru.yetanothercoder.stress.requests.StubHttpGenerator;
 import ru.yetanothercoder.stress.timer.SchedulerType;
 
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
+
 import static ru.yetanothercoder.stress.timer.SchedulerType.HASHEDWHEEL;
 
 final public class StressConfig {
-    public final String host;
-    public final int port;
+    public final URI url;
     public final int initRps;
     public final int durationSec;
     public final double tuningFactor;
@@ -21,11 +25,12 @@ final public class StressConfig {
     public final SchedulerType type;
     public final int readTimeoutMs, writeTimeoutMs;
     public final RequestGenerator requestGenerator;
+    public final Path dir;
+    public final String prefix;
 
-    public StressConfig(String host, int initRps, int port, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean httpErrors, boolean server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, RequestGenerator requestGenerator) {
-        this.host = host;
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean httpErrors, boolean server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator) {
+        this.url = url;
         this.initRps = initRps;
-        this.port = port;
         this.durationSec = durationSec;
         this.tuningFactor = tuningFactor;
         this.initialTuningFactor = initialTuningFactor;
@@ -37,15 +42,16 @@ final public class StressConfig {
         this.type = type;
         this.readTimeoutMs = readTimeoutMs;
         this.writeTimeoutMs = writeTimeoutMs;
+        this.dir = dir;
+        this.prefix = prefix;
         this.requestGenerator = requestGenerator;
     }
 
 
     public static class Builder {
-        final String host;
+        URI url;
 
         // defaults >>
-        int port = 80;
         int initRps = 10;
         int durationSec = -1;
         double tuningFactor = 1.1;
@@ -57,14 +63,31 @@ final public class StressConfig {
         int sample = -1;
         SchedulerType exec = HASHEDWHEEL;
         int readTimeoutMs = 1000, writeTimeoutMs = 1000;
+        Path dir;
+        String prefix;
         RequestGenerator requestGenerator = new StubHttpGenerator();
 
-        public Builder(String host) {
-            this.host = host;
+
+        public Builder host(String host) {
+            try {
+                this.url = new URI("http", host, null, null);
+            } catch (URISyntaxException e) {
+                throw new IllegalArgumentException(e.getMessage(), e);
+            }
+            return this;
         }
 
-        public Builder port(int port) {
-            this.port = port;
+        public Builder url(URI url) {
+            this.url = url;
+            return this;
+        }
+
+        public Builder url(String url) {
+            try {
+                this.url = new URI(url);
+            } catch (URISyntaxException e) {
+                throw new IllegalArgumentException(e.getMessage(), e);
+            }
             return this;
         }
 
@@ -78,8 +101,13 @@ final public class StressConfig {
             return this;
         }
 
-        public Builder initialTuningFactor(int factor) {
+        public Builder initialTuningFactor(double factor) {
             this.initialTuningFactor = factor;
+            return this;
+        }
+
+        public Builder duration(int sec) {
+            this.durationSec = sec;
             return this;
         }
 
@@ -123,14 +151,28 @@ final public class StressConfig {
             return this;
         }
 
-        public Builder withRequestGenerator(RequestGenerator g) {
+        public Builder requestGenerator(RequestGenerator g) {
             this.requestGenerator = g;
             return this;
         }
 
+        public Builder dir(Path dir) {
+            this.dir = dir;
+            return this;
+        }
+
+        public Builder prefix(String prefix) {
+            this.prefix = prefix;
+            return this;
+        }
+
         public StressConfig build() {
-            return new StressConfig(host, initRps, port, durationSec, tuningFactor, initialTuningFactor, print, debug,
-                    httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, requestGenerator);
+            return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
+                    httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator);
+        }
+
+        public StressClient buildClient() {
+            return new StressClient(build());
         }
     }
 }
