@@ -9,9 +9,10 @@ public class Utils {
     final private static int minute = 60;
     final private static int hour = 60;
 
+    private static Pattern STATUS_PATTERN = Pattern.compile("HTTP/1\\.[10]\\s+(\\d+)"); // supports only 1.0 or 1.1
+
     public static int parseStatus(String respLine) {
-        Pattern p = Pattern.compile("HTTP/1\\.[10]\\s+(\\d+)");
-        Matcher m = p.matcher(respLine);
+        Matcher m = STATUS_PATTERN.matcher(respLine);
         if (m.find()) {
             return Integer.parseInt(m.group(1));
         }
