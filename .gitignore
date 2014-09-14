@@ -1,5 +1,5 @@
 *.class
 *.iml
-/.idea
-!/.idea/runConfigurations
+.idea/*
+!.idea/runConfigurations
 /target
