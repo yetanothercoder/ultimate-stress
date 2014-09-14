@@ -89,7 +89,7 @@ public class StressClient {
             System.err.printf("wrong params: `%s`", e);
 
             System.out.printf(
-                    "Usage*: java [-t <N> -s <0,1> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] -jar ultimate-stress-x.x.jar <url> [<rps>]%n" +
+                    "Usage*: java -jar ultimate-stress-x.x.jar [-t <N> -s <N> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] <url> [<rps>]%n" +
                             "-t duration in seconds%n" +
                             "-s server option%n%n" +
 

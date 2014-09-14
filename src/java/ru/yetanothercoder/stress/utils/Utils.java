@@ -20,7 +20,7 @@ public class Utils {
     }
 
     /**
-     * Human readable formatter
+     * Simple human readable formatter
      *
      * @param ms duration in millis
      * @return human readable format, ex. 1.1h or 1.2m
