@@ -36,7 +36,7 @@ import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
 /**
  * Stress Client based on Netty
  * Schedulers requests, count stats, check for error and output all info to STDIN/STDERR
- *
+ * <p/>
  * TODO: 1. usage legend
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
@@ -67,7 +67,6 @@ public class StressClient {
     private volatile long started;
 
     private final StressConfig c;
-//    private CountingServer server = null;
 
 
     private final Metric responseSummary = new Metric("Summary Response");

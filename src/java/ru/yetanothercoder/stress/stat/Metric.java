@@ -10,6 +10,9 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+/**
+ * Fast & simple metrics calculator: average, percentiles, std etc.
+ */
 @ThreadSafe
 public class Metric {
     public final String name;
