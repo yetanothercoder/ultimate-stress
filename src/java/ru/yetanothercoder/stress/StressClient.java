@@ -23,8 +23,6 @@ import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,7 +30,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.lang.System.getProperty;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
@@ -68,7 +65,6 @@ public class StressClient {
 
     private volatile long started;
 
-    private final Map<String, String> configMap = new LinkedHashMap<>();
     private final StressConfig c;
     private CountingServer server = null;
 
@@ -86,12 +82,15 @@ public class StressClient {
             StressClient client = new StressClient(config);
             client.start();
         } catch (Exception e) {
-            System.err.println("wrong params: " + e);
-            System.out.println("Usage*: java [-t <N> -s <0,1> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] -jar ultimate-stress-x.x.jar <url> [<rps>]");
-            System.out.println("-t duration in seconds");
-            System.out.println("-s server option");
-            System.out.println();
-            System.out.println("*See actual CLI format and docs at https://github.com/yetanothercoder/ultimate-stress/wiki/CLI");
+            System.err.printf("wrong params: `%s`", e);
+
+            System.out.printf(
+                    "Usage*: java [-t <N> -s <0,1> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] -jar ultimate-stress-x.x.jar <url> [<rps>]%n" +
+                            "-t duration in seconds%n" +
+                            "-s server option%n%n" +
+
+                            "*See actual CLI format and docs at https://github.com/yetanothercoder/ultimate-stress/wiki/CLI"
+            );
 
             System.exit(1);
         }
@@ -136,7 +135,6 @@ public class StressClient {
                         Executors.newCachedThreadPool(),
                         Executors.newCachedThreadPool()));
 
-        // Set up the pipeline factory.
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
             @Override
             public ChannelPipeline getPipeline() throws Exception {
@@ -157,12 +155,6 @@ public class StressClient {
         return bootstrap;
     }
 
-    private String registerParam(String name, String def) {
-        String value = getProperty(name, def);
-        configMap.put(name, value);
-        return value;
-    }
-
     public void start() throws InterruptedException {
 
         Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
@@ -179,8 +171,8 @@ public class StressClient {
         }
 
         int initRps = MILLION / dynamicRate.get();
-        System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config: %s%n",
-                name, addr, initRps, dynamicRate.get(), configMap);
+        System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config:%n%s%n",
+                name, addr, initRps, dynamicRate.get(), c);
 
         if (server != null) {
             server.start();

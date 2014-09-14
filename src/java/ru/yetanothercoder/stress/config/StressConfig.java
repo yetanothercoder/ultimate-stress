@@ -55,6 +55,27 @@ final public class StressConfig {
         return url.getPort() == -1 ? 80 : url.getPort();
     }
 
+    @Override
+    public String toString() {
+        return "StressConfig{" +
+                "url=" + url +
+                ", initRps=" + initRps +
+                ", durationSec=" + durationSec +
+                ", tuningFactor=" + tuningFactor +
+                ", initialTuningFactor=" + initialTuningFactor +
+                ", print=" + print +
+                ", debug=" + debug +
+                ", httpErrors=" + httpErrors +
+                ", server=" + server +
+                ", sample=" + sample +
+                ", type=" + type +
+                ", readTimeoutMs=" + readTimeoutMs +
+                ", writeTimeoutMs=" + writeTimeoutMs +
+                ", requestGenerator=" + requestGenerator +
+                ", dir=" + dir +
+                ", prefix=" + prefix +
+                '}';
+    }
 
     public static class Builder {
         URI url;
@@ -73,7 +94,7 @@ final public class StressConfig {
         int readTimeoutMs = 1000, writeTimeoutMs = 1000;
         Path dir;
         String prefix;
-        RequestGenerator requestGenerator = new StubHttpGenerator();
+        RequestGenerator requestGenerator;
 
         public Builder url(URI url) {
             this.url = url;
@@ -165,6 +186,13 @@ final public class StressConfig {
         }
 
         public StressConfig build() {
+            if (requestGenerator == null) {
+                int port = url.getPort() < 0 ? 80 : url.getPort();
+                String query = url.getPath();
+                if (url.getQuery() != null) query += "?" + url.getQuery();
+
+                requestGenerator = new StubHttpGenerator(url.getHost(), port, query);
+            }
             return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
                     httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator);
         }

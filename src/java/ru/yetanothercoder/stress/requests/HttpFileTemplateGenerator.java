@@ -136,6 +136,15 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
 
     }
 
+    @Override
+    public String toString() {
+        return "HttpFileTemplateGenerator{" +
+                "prefix='" + prefix + '\'' +
+                ", dir=" + dir +
+                ", replacementList.size=" + replacementList.size() +
+                '}';
+    }
+
     class Pair {
         final String name;
         final String value;
