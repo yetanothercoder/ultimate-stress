@@ -19,6 +19,7 @@ final public class StressConfig {
     public final double initialTuningFactor;
     public final boolean print;
     public final boolean debug;
+    public final boolean quiet;
     public final boolean httpErrors;
     public final boolean server;
     public final int sample;
@@ -28,7 +29,7 @@ final public class StressConfig {
     public final Path dir;
     public final String prefix;
 
-    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean httpErrors, boolean server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator) {
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, boolean server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator) {
         this.url = url;
         this.initRps = initRps;
         this.durationSec = durationSec;
@@ -36,6 +37,7 @@ final public class StressConfig {
         this.initialTuningFactor = initialTuningFactor;
         this.print = print;
         this.debug = debug;
+        this.quiet = quiet;
         this.httpErrors = httpErrors;
         this.server = server;
         this.sample = sample;
@@ -87,6 +89,7 @@ final public class StressConfig {
         double initialTuningFactor = 1.2;
         boolean print = false;
         boolean debug = false;
+        boolean quiet;
         boolean httpErrors = false;
         boolean server = false;
         int sample = -1;
@@ -132,6 +135,11 @@ final public class StressConfig {
 
         public Builder print() {
             this.print = true;
+            return this;
+        }
+
+        public Builder quiet() {
+            this.quiet = true;
             return this;
         }
 
@@ -194,7 +202,7 @@ final public class StressConfig {
                 requestGenerator = new StubHttpGenerator(url.getHost(), port, query);
             }
             return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
-                    httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator);
+                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator);
         }
 
         public StressClient buildClient() {

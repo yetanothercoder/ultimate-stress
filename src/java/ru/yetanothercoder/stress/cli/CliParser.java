@@ -47,6 +47,9 @@ public class CliParser {
                 case "-debug":
                     b.debug();
                     break;
+                case "-q":
+                    b.quiet();
+                    break;
                 case "-pr":
                     b.print();
                     break;

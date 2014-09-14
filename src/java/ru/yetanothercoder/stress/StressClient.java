@@ -243,16 +243,20 @@ public class StressClient {
         final int sentSoFar = ch.sent.getAndSet(0);
         rpsStat.register(sentSoFar);
 
-        System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
-                sentSoFar,
-                ch.received.getAndSet(0),
-                conn, dynamicRate.get(),
-                ch.te.getAndSet(0),
-                ch.be.getAndSet(0),
-                ch.ce.getAndSet(0),
-                ch.ie.getAndSet(0),
-                ch.nn.getAndSet(0)
-        );
+        if (c.quiet) {
+            System.out.print(".");
+        } else {
+            System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
+                    sentSoFar,
+                    ch.received.getAndSet(0),
+                    conn, dynamicRate.get(),
+                    ch.te.getAndSet(0),
+                    ch.be.getAndSet(0),
+                    ch.ce.getAndSet(0),
+                    ch.ie.getAndSet(0),
+                    ch.nn.getAndSet(0)
+            );
+        }
     }
 
     private void sendOne() {

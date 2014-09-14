@@ -23,6 +23,7 @@ public class StubHttpGenerator implements RequestGenerator {
         STUB = String.format(
                 "GET %s HTTP/1.1%n" +
                         "Host: %s:%s%n" +
+                        "User-Agent: github.com/yetanothercoder/ultimate-stress%n" +
                         "Connection: close%n" +
                         "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0%n%n",
 
