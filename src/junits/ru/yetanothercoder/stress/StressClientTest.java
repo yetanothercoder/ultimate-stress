@@ -28,7 +28,7 @@ public class StressClientTest {
 
     @Test
     public void testReceivingAndSending() throws Exception {
-        StressConfig config = new StressConfig.Builder().rps(100).build();
+        StressConfig config = new StressConfig.Builder().url("http://localhost:8888/").rps(100).build();
         StressClient client = new StressClient(config);
         TimeUnit.SECONDS.sleep(1);
 
@@ -43,7 +43,7 @@ public class StressClientTest {
 
     @Test
     public void testYa() throws Exception {
-        StressClient client = new StressClient(new StressConfig.Builder().host("ya.ru").build());
+        StressClient client = new StressClient(new StressConfig.Builder().url("http://ya.ru").build());
         client.start();
 
         TimeUnit.SECONDS.sleep(5);

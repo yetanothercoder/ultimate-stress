@@ -47,6 +47,14 @@ final public class StressConfig {
         this.requestGenerator = requestGenerator;
     }
 
+    public String getHost() {
+        return url.getHost();
+    }
+
+    public int getPort() {
+        return url.getPort() == -1 ? 80 : url.getPort();
+    }
+
 
     public static class Builder {
         URI url;
@@ -66,16 +74,6 @@ final public class StressConfig {
         Path dir;
         String prefix;
         RequestGenerator requestGenerator = new StubHttpGenerator();
-
-
-        public Builder host(String host) {
-            try {
-                this.url = new URI("http", host, null, null);
-            } catch (URISyntaxException e) {
-                throw new IllegalArgumentException(e.getMessage(), e);
-            }
-            return this;
-        }
 
         public Builder url(URI url) {
             this.url = url;
@@ -146,7 +144,7 @@ final public class StressConfig {
             return this;
         }
 
-        public Builder withExec(SchedulerType type) {
+        public Builder scheduler(SchedulerType type) {
             this.exec = type;
             return this;
         }

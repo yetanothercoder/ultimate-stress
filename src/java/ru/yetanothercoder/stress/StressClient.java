@@ -12,7 +12,6 @@ import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import ru.yetanothercoder.stress.cli.CliParser;
 import ru.yetanothercoder.stress.config.StressConfig;
-import ru.yetanothercoder.stress.requests.HttpFileTemplateGenerator;
 import ru.yetanothercoder.stress.server.CountingServer;
 import ru.yetanothercoder.stress.stat.CountersHolder;
 import ru.yetanothercoder.stress.stat.Metric;
@@ -23,15 +22,16 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
-import java.nio.file.Paths;
-import java.util.*;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static java.lang.Integer.valueOf;
 import static java.lang.System.getProperty;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
@@ -82,7 +82,9 @@ public class StressClient {
     public static void main(String[] args) throws Exception {
 
         try {
-            StressConfig config = CliParser.parseAndValidate();
+            StressConfig config = CliParser.parseAndValidate(args);
+            StressClient client = new StressClient(config);
+            client.start();
         } catch (Exception e) {
             System.err.println("wrong params: " + e);
             System.out.println("Usage*: java [-t <N> -s <0,1> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] -jar ultimate-stress-x.x.jar <url> [<rps>]");
@@ -90,32 +92,20 @@ public class StressClient {
             System.out.println("-s server option");
             System.out.println();
             System.out.println("*See actual CLI format and docs at https://github.com/yetanothercoder/ultimate-stress/wiki/CLI");
+
+            System.exit(1);
         }
-
-        final String host = args.length > 0 ? args[0] : "localhost";
-        final int port = args.length > 1 ? Integer.valueOf(args[1]) : 8080;
-        final int rps = args.length > 2 ? valueOf(args[2]) : -1;
-
-        Map<String, String> r = new HashMap<>();
-        r.put("$browser", "Mozilla/5.0");
-        r.put("$v", "11.0");
-
-        HttpFileTemplateGenerator reqSrc = new HttpFileTemplateGenerator(Paths.get("."), "http", host + ":" + port, r);
-        final StressClient client = new StressConfig.Builder().host(host).
-                rps(rps).requestGenerator(reqSrc).
-                buildClient();
-        client.start();
     }
 
     public StressClient(StressConfig config) {
         this.c = config;
 
         if (c.server) {
-            server = new CountingServer(c.url.getPort(), 100, MILLISECONDS, c.debug);
+            server = new CountingServer(c.getPort(), 100, MILLISECONDS, c.debug);
         }
 
         this.hwTimer = new HashedWheelTimer();
-        this.addr = new InetSocketAddress(c.url.getHost(), c.url.getPort());
+        this.addr = new InetSocketAddress(c.getHost(), c.getPort());
 
         if (c.initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
 
@@ -199,7 +189,7 @@ public class StressClient {
 
 
         if (!checkConnection()) {
-            System.err.printf("ERROR: no connection to %s:%,d%n", c.url.getHost(), c.url.getPort());
+            System.err.printf("ERROR: no connection to %s:%,d%n", c.getHost(), c.getPort());
             System.exit(0);
         }
 
@@ -244,7 +234,7 @@ public class StressClient {
 
     private boolean checkConnection() {
         // java 6 style to handle such errors >>
-        try (Socket socket = new Socket(c.url.getHost(), c.url.getPort())) {
+        try (Socket socket = new Socket(c.getHost(), c.getPort())) {
             return socket.isConnected();
         } catch (IOException e) {
             // ignore
