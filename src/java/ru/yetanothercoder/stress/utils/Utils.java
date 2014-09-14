@@ -18,6 +18,12 @@ public class Utils {
         return -1;
     }
 
+    /**
+     * Human readable formatter
+     *
+     * @param ms duration in millis
+     * @return human readable format, ex. 1.1h or 1.2m
+     */
     public static String formatLatency(long ms) {
         String result;
         ms = Math.abs(ms);
