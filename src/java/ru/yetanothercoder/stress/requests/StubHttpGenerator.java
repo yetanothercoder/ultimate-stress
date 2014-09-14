@@ -25,7 +25,7 @@ public class StubHttpGenerator implements RequestGenerator {
                         "Host: %s:%s%n" +
                         "User-Agent: github.com/yetanothercoder/ultimate-stress%n" +
 //                        "User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:11.0) Gecko/20100101 Firefox/11.0%n%n",
-                        "Connection: close%n%n" +
+                        "Connection: close%n%n",
                 query,
                 host,
                 port
