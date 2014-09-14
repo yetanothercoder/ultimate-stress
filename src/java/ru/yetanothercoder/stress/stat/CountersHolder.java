@@ -45,7 +45,12 @@ final public class CountersHolder {
     public final AtomicInteger ie = new AtomicInteger(0);
 
     /**
-     * Other errors
+     * Other errors per sec
      */
-    public final AtomicInteger nn = new AtomicInteger(0);
+    public final AtomicInteger oe = new AtomicInteger(0);
+
+    /**
+     * Total error num
+     */
+    public final AtomicInteger errors = new AtomicInteger(0);
 }

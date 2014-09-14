@@ -17,7 +17,7 @@ public class StressClientTest {
 
     @Before
     public void setUp() throws Exception {
-        server = new CountingServer(8888);
+        server = new CountingServer(8888, 50, false);
         server.start();
     }
 
@@ -38,7 +38,7 @@ public class StressClientTest {
         client.stop(true);
         TimeUnit.SECONDS.sleep(1);
 
-        Assert.assertTrue(client.getSentTotal() - server.total.get() < 5);
+        Assert.assertTrue(client.getSentTotal() - server.ch.total.get() < 5);
     }
 
     @Test

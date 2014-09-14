@@ -10,16 +10,10 @@ import java.nio.file.Paths;
 
 public class CliParser {
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
 //        CliParser.parseAndValidate(args);
 
-
-        URI uri = null;
-        try {
-            uri = new URI("http://myhost:8080/index.html?id=asdf&bla");
-        } catch (URISyntaxException e) {
-            e.printStackTrace();
-        }
+        URI uri = URI.create("http://myhost:8080/index.html?id=asdf&bla");
 
         System.out.println(uri.getHost());
         System.out.println(uri.getPort());
@@ -41,9 +35,6 @@ public class CliParser {
             final String arg = args[i];
 
             switch (arg) {
-                case "-s":
-                    b.server();
-                    break;
                 case "-debug":
                     b.debug();
                     break;
@@ -55,6 +46,14 @@ public class CliParser {
                     break;
                 case "-he":
                     b.httpErrors();
+                    break;
+                case "-s":
+                    if (++i == size) throw new IllegalArgumentException("`-s` no value!");
+                    b.server(Integer.parseInt(args[i]));
+                    break;
+                case "-srd":
+                    if (++i == size) throw new IllegalArgumentException("`-srd` no value!");
+                    b.serverRandomDelay(Integer.parseInt(args[i]));
                     break;
                 case "-t":
                     if (++i == size) throw new IllegalArgumentException("`-t` no value!");
@@ -111,16 +110,18 @@ public class CliParser {
         }
 
         StressConfig config = b.build();
-        if (config.url == null && config.dir == null && config.prefix == null) {
-            throw new IllegalArgumentException("no required params!");
-        }
+        if (config.server == 0) {
+            if (config.url == null && config.dir == null && config.prefix == null) {
+                throw new IllegalArgumentException("no required params!");
+            }
 
-        if (config.dir != null || config.prefix != null) {
-            String hostPort = config.url == null ? null : config.url.getHost() + ":" + config.url.getPort();
-            Path dir = config.dir == null ? Paths.get(".") : config.dir;
-            b.requestGenerator(new HttpFileTemplateGenerator(dir, config.prefix, hostPort, null));
+            if (config.dir != null || config.prefix != null) {
+                String hostPort = config.url == null ? null : config.url.getHost() + ":" + config.url.getPort();
+                Path dir = config.dir == null ? Paths.get(".") : config.dir;
+                b.requestGenerator(new HttpFileTemplateGenerator(dir, config.prefix, hostPort, null));
 
-            config = b.build();
+                config = b.build();
+            }
         }
 
         return config;

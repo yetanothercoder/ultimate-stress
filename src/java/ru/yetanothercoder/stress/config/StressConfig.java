@@ -21,15 +21,16 @@ final public class StressConfig {
     public final boolean debug;
     public final boolean quiet;
     public final boolean httpErrors;
-    public final boolean server;
+    public final int server;
     public final int sample;
     public final SchedulerType type;
     public final int readTimeoutMs, writeTimeoutMs;
     public final RequestGenerator requestGenerator;
     public final Path dir;
     public final String prefix;
+    public final int serverRandomDelayMs;
 
-    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, boolean server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator) {
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs) {
         this.url = url;
         this.initRps = initRps;
         this.durationSec = durationSec;
@@ -47,6 +48,7 @@ final public class StressConfig {
         this.dir = dir;
         this.prefix = prefix;
         this.requestGenerator = requestGenerator;
+        this.serverRandomDelayMs = serverRandomDelayMs;
     }
 
     public String getHost() {
@@ -54,7 +56,7 @@ final public class StressConfig {
     }
 
     public int getPort() {
-        return url.getPort() == -1 ? 80 : url.getPort();
+        return url.getPort() < 0 ? 80 : url.getPort();
     }
 
     @Override
@@ -91,13 +93,14 @@ final public class StressConfig {
         boolean debug = false;
         boolean quiet;
         boolean httpErrors = false;
-        boolean server = false;
+        int server;
         int sample = -1;
         SchedulerType exec = HASHEDWHEEL;
         int readTimeoutMs = 1000, writeTimeoutMs = 1000;
         Path dir;
         String prefix;
         RequestGenerator requestGenerator;
+        int serverRandomDelayMs = -1;
 
         public Builder url(URI url) {
             this.url = url;
@@ -153,8 +156,8 @@ final public class StressConfig {
             return this;
         }
 
-        public Builder server() {
-            this.server = true;
+        public Builder server(int port) {
+            this.server = port;
             return this;
         }
 
@@ -165,6 +168,11 @@ final public class StressConfig {
 
         public Builder readTimeout(int ms) {
             this.readTimeoutMs = ms;
+            return this;
+        }
+
+        public Builder serverRandomDelay(int ms) {
+            this.serverRandomDelayMs = ms;
             return this;
         }
 
@@ -194,7 +202,7 @@ final public class StressConfig {
         }
 
         public StressConfig build() {
-            if (requestGenerator == null) {
+            if (requestGenerator == null && url != null) {
                 int port = url.getPort() < 0 ? 80 : url.getPort();
                 String query = url.getPath();
                 if (url.getQuery() != null) query += "?" + url.getQuery();
@@ -202,7 +210,7 @@ final public class StressConfig {
                 requestGenerator = new StubHttpGenerator(url.getHost(), port, query);
             }
             return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
-                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator);
+                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator, serverRandomDelayMs);
         }
 
         public StressClient buildClient() {

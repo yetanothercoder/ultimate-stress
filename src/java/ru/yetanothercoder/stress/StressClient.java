@@ -27,7 +27,6 @@ import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
@@ -43,7 +42,7 @@ import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
 public class StressClient {
 
     public static final int MILLION = 1000000;
-    static final int THREADS = Runtime.getRuntime().availableProcessors();
+    public static final int THREADS = Runtime.getRuntime().availableProcessors();
     public static final int HTTP_STATUS_WIDTH = 20;
 
     private final SocketAddress addr;
@@ -54,7 +53,7 @@ public class StressClient {
     private final AtomicInteger dynamicRate = new AtomicInteger(1); // maximum rps ~1M (starting point)
 
     private String name;
-    private final HashedWheelTimer hwTimer;
+    private final HashedWheelTimer hwTimer = new HashedWheelTimer();
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(THREADS);
     private final Scheduler scheduler;
@@ -66,7 +65,7 @@ public class StressClient {
     private volatile long started;
 
     private final StressConfig c;
-    private CountingServer server = null;
+//    private CountingServer server = null;
 
 
     private final Metric responseSummary = new Metric("Summary Response");
@@ -79,8 +78,12 @@ public class StressClient {
 
         try {
             StressConfig config = CliParser.parseAndValidate(args);
-            StressClient client = new StressClient(config);
-            client.start();
+
+            if (config.server > 0) {
+                new CountingServer(config.server, config.serverRandomDelayMs, config.debug).start();
+            } else {
+                new StressClient(config).start();
+            }
         } catch (Exception e) {
             System.err.printf("wrong params: `%s`", e);
 
@@ -99,11 +102,6 @@ public class StressClient {
     public StressClient(StressConfig config) {
         this.c = config;
 
-        if (c.server) {
-            server = new CountingServer(c.getPort(), 100, MILLISECONDS, c.debug);
-        }
-
-        this.hwTimer = new HashedWheelTimer();
         this.addr = new InetSocketAddress(c.getHost(), c.getPort());
 
         if (c.initRps > MILLION) throw new IllegalArgumentException("rps<=1M!");
@@ -174,12 +172,6 @@ public class StressClient {
         System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config:%n%s%n",
                 name, addr, initRps, dynamicRate.get(), c);
 
-        if (server != null) {
-            server.start();
-            TimeUnit.SECONDS.sleep(2);
-        }
-
-
         if (!checkConnection()) {
             System.err.printf("ERROR: no connection to %s:%,d%n", c.getHost(), c.getPort());
             System.exit(0);
@@ -246,7 +238,7 @@ public class StressClient {
         if (c.quiet) {
             System.out.print(".");
         } else {
-            System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, nn=%,d%n",
+            System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, oe=%,d%n",
                     sentSoFar,
                     ch.received.getAndSet(0),
                     conn, dynamicRate.get(),
@@ -254,7 +246,7 @@ public class StressClient {
                     ch.be.getAndSet(0),
                     ch.ce.getAndSet(0),
                     ch.ie.getAndSet(0),
-                    ch.nn.getAndSet(0)
+                    ch.oe.getAndSet(0)
             );
         }
     }
@@ -267,7 +259,7 @@ public class StressClient {
             if (e.getCause() instanceof SocketException) {
                 processLimitErrors();
             } else {
-                ch.nn.incrementAndGet();
+                ch.oe.incrementAndGet();
             }
             if (c.debug) {
                 e.printStackTrace(System.err);
@@ -285,7 +277,6 @@ public class StressClient {
         scheduler.shutdown();
         hwTimer.stop();
         statExecutor.shutdown();
-        if (server != null) server.stop();
         bootstrap.shutdown();
 
         stopped = true;
@@ -511,7 +502,7 @@ public class StressClient {
             } else if (exc instanceof IOException) {
                 ch.ie.incrementAndGet();
             } else {
-                ch.nn.incrementAndGet();
+                ch.oe.incrementAndGet();
             }
 
             if (c.debug) {

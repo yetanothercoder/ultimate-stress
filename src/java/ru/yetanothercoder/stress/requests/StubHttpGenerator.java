@@ -3,7 +3,6 @@ package ru.yetanothercoder.stress.requests;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 
-import java.net.URI;
 import java.nio.charset.Charset;
 
 /**
@@ -11,13 +10,6 @@ import java.nio.charset.Charset;
  */
 public class StubHttpGenerator implements RequestGenerator {
     final String STUB;
-
-    public static void main(String[] args) {
-        URI url = URI.create("http://ya.ru/my/app?p1=1&p2=2");
-        System.out.println(url.getQuery());
-        System.out.println(url.getRawQuery());
-        System.out.println(url.getPath());
-    }
 
     public StubHttpGenerator(String host, int port, String query) {
         STUB = String.format(

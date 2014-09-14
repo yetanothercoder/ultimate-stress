@@ -27,7 +27,7 @@ public class CliParserTest {
         expectedEx.expect(NumberFormatException.class);
         expectedEx.expectMessage("For input string: \"sdf\"");
 
-        String[] args = new String[]{"-t", "sdf", "-s", "http://myhost:8080/myapp?p1=1&p2=2", "500"};
+        String[] args = new String[]{"-t", "sdf", "http://myhost:8080/myapp?p1=1&p2=2", "500"};
         CliParser.parseAndValidate(args);
     }
 
@@ -36,7 +36,7 @@ public class CliParserTest {
         expectedEx.expect(IllegalArgumentException.class);
         expectedEx.expectMessage("Incorrect path: sdfsadf");
 
-        String[] args = new String[]{"-d", "sdfsadf", "-s", "http://myhost:8080/myapp?p1=1&p2=2", "500"};
+        String[] args = new String[]{"-d", "sdfsadf", "http://myhost:8080/myapp?p1=1&p2=2", "500"};
         CliParser.parseAndValidate(args);
     }
 
@@ -75,8 +75,8 @@ public class CliParserTest {
     }
 
     @Test
-    public void testAll() throws Exception {
-        String[] args = new String[]{"-s", "-t", "7", "-k", "1.5", "-k0", "1.4", "-d", ".", "-f", "http",
+    public void testNormalClient() throws Exception {
+        String[] args = new String[]{"-t", "7", "-k", "1.5", "-k0", "1.4", "-d", ".", "-f", "http",
                 "-pr", "-debug", "-he", "-rt", "77", "-wt", "88",
                 "http://myhost:8080/myapp?p1=1&p2=2", "777"};
 
@@ -87,7 +87,6 @@ public class CliParserTest {
         Assert.assertEquals(config.initialTuningFactor, 1.4, 1e-10);
         Assert.assertEquals(config.dir, Paths.get("."));
         Assert.assertEquals(config.prefix, "http");
-        Assert.assertTrue(config.server);
         Assert.assertTrue(config.print);
         Assert.assertTrue(config.debug);
         Assert.assertTrue(config.httpErrors);
@@ -97,5 +96,16 @@ public class CliParserTest {
         Assert.assertEquals(config.url.getHost(), "myhost");
         Assert.assertEquals(config.url.getPort(), 8080);
         Assert.assertEquals(config.url.getPath(), "/myapp");
+    }
+
+    @Test
+    public void testServer() throws Exception {
+        String[] args = new String[]{"-s", "88", "-srd", "77", "-t", "7", "-debug"};
+
+        StressConfig config = CliParser.parseAndValidate(args);
+
+        Assert.assertTrue(config.server == 88);
+        Assert.assertTrue(config.serverRandomDelayMs == 77);
+        Assert.assertTrue(config.debug);
     }
 }
