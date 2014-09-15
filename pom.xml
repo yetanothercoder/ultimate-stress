@@ -4,7 +4,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>ru.yetanothercoder</groupId>
     <artifactId>ultimate-stress</artifactId>
-    <version>1.0.3</version>
+    <version>1.0.5</version>
     <packaging>jar</packaging>
     <name>Ultimate Stress Tool</name>
     <description>Stress/Load testing framework with Ultimate Performance based on NIO</description>
@@ -73,11 +73,20 @@
             <version>1.0</version>
         </dependency>
 
+        <!-- test >> -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>4.11</version>
             <scope>test</scope>
         </dependency>
+
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>18.0</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 </project>

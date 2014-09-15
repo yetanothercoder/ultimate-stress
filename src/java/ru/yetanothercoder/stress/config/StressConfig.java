@@ -1,16 +1,23 @@
 package ru.yetanothercoder.stress.config;
 
 import ru.yetanothercoder.stress.StressClient;
+import ru.yetanothercoder.stress.requests.GetHttpRequestGenerator;
 import ru.yetanothercoder.stress.requests.RequestGenerator;
-import ru.yetanothercoder.stress.requests.StubHttpGenerator;
 import ru.yetanothercoder.stress.timer.SchedulerType;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static ru.yetanothercoder.stress.timer.SchedulerType.HASHEDWHEEL;
 
+/**
+ * Full config for client & server mode
+ *
+ * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
+ */
 final public class StressConfig {
     public final URI url;
     public final int initRps;
@@ -29,8 +36,9 @@ final public class StressConfig {
     public final Path dir;
     public final String prefix;
     public final int serverRandomDelayMs;
+    public final List<String> headers;
 
-    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs) {
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, List<String> headers) {
         this.url = url;
         this.initRps = initRps;
         this.durationSec = durationSec;
@@ -49,6 +57,7 @@ final public class StressConfig {
         this.prefix = prefix;
         this.requestGenerator = requestGenerator;
         this.serverRandomDelayMs = serverRandomDelayMs;
+        this.headers = new ArrayList<>(headers); // def copy
     }
 
     public String getHost() {
@@ -59,9 +68,13 @@ final public class StressConfig {
         return url.getPort() < 0 ? 80 : url.getPort();
     }
 
+    public String getHostPort() {
+        return String.format("%s:%s", getHost(), getPort());
+    }
+
     @Override
     public String toString() {
-        return "StressConfig{" +
+        return "{" +
                 "url=" + url +
                 ", initRps=" + initRps +
                 ", durationSec=" + durationSec +
@@ -78,6 +91,7 @@ final public class StressConfig {
                 ", requestGenerator=" + requestGenerator +
                 ", dir=" + dir +
                 ", prefix=" + prefix +
+                ", headers=" + headers +
                 '}';
     }
 
@@ -93,7 +107,7 @@ final public class StressConfig {
         boolean debug = false;
         boolean quiet;
         boolean httpErrors = false;
-        int server;
+        int server = 0;
         int sample = -1;
         SchedulerType exec = HASHEDWHEEL;
         int readTimeoutMs = 1000, writeTimeoutMs = 1000;
@@ -101,6 +115,7 @@ final public class StressConfig {
         String prefix;
         RequestGenerator requestGenerator;
         int serverRandomDelayMs = -1;
+        List<String> headers = new ArrayList<>(2);
 
         public Builder url(URI url) {
             this.url = url;
@@ -191,6 +206,11 @@ final public class StressConfig {
             return this;
         }
 
+        public Builder addHeader(String nameAndValue) {
+            this.headers.add(nameAndValue);
+            return this;
+        }
+
         public Builder dir(Path dir) {
             this.dir = dir;
             return this;
@@ -207,10 +227,10 @@ final public class StressConfig {
                 String query = url.getPath();
                 if (url.getQuery() != null) query += "?" + url.getQuery();
 
-                requestGenerator = new StubHttpGenerator(url.getHost(), port, query);
+                requestGenerator = new GetHttpRequestGenerator(url.getHost(), port, query, headers);
             }
             return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
-                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator, serverRandomDelayMs);
+                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator, serverRandomDelayMs, headers);
         }
 
         public StressClient buildClient() {

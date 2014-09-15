@@ -37,13 +37,13 @@ import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
  * Stress Client based on Netty
  * Schedulers requests, count stats, check for error and output all info to STDIN/STDERR
  * <p/>
- * TODO: 1. usage legend
+ * TODO: 1. usage legend 2. custom headers 3. content-length support
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
  */
 public class StressClient {
 
-    public static final int MILLION = 1000000;
+    public static final int MILLION = 1_000_000;
     public static final int THREADS = Runtime.getRuntime().availableProcessors();
     public static final int HTTP_STATUS_WIDTH = 20;
 
@@ -86,7 +86,7 @@ public class StressClient {
                 new StressClient(config).start();
             }
         } catch (Exception e) {
-            System.err.printf("wrong params: `%s`", e);
+            System.err.printf("wrong params: `%s`%n", e);
 
             System.out.printf(
                     "Usage*: java -jar ultimate-stress-x.x.jar [-t <N> -s <N> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] <url> [<rps>]%n" +

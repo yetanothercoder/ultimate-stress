@@ -1,13 +1,15 @@
 package ru.yetanothercoder.stress.requests;
 
-import junit.framework.Assert;
+import org.junit.Assert;
 import org.junit.Test;
+import ru.yetanothercoder.stress.utils.HostPort;
 
 import java.io.File;
 import java.io.PrintWriter;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -23,7 +25,7 @@ public class HttpFileTemplateSourceTest {
         file2.deleteOnExit();
 
         PrintWriter wr = new PrintWriter(file1);
-        wr.print("abc$1zz$hp");
+        wr.print("abc$1zz$HP");
         wr.close();
 
         wr = new PrintWriter(file2);
@@ -44,5 +46,46 @@ public class HttpFileTemplateSourceTest {
         Assert.assertEquals("abc11zz77\n\n", requests[1]);
         Assert.assertEquals("def22zz\n\n", requests[2]);
         Assert.assertEquals("def22zz\n\n", requests[3]);
+    }
+
+    @Test
+    public void testHostPortFromTemplates() throws Exception {
+        final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
+
+        File file = File.createTempFile("http1", ".tmp", tmpDir);
+        file.deleteOnExit();
+        PrintWriter wr = new PrintWriter(file);
+        wr.print("GET /my/app/?param1=1 HTTP/1.0\n" +
+                "Host: myhost777:8077\n" +
+                "Connection: close\n" +
+                "Referer: test.ru\n");
+        wr.close();
+
+
+        file = File.createTempFile("http1", ".tmp", tmpDir);
+        file.deleteOnExit();
+        wr = new PrintWriter(file);
+        wr.print("GET /my/app/?param2=2 HTTP/1.0\n" +
+                "Host: myhost888\n" +
+                "Connection: close\n" +
+                "Referer: test.ru\n");
+        wr.close();
+
+        file = File.createTempFile("http1", ".tmp", tmpDir);
+        file.deleteOnExit();
+        wr = new PrintWriter(file);
+        wr.print("GET /my/app/?param2=2 HTTP/1.0\n" +
+                "Connection: close\n" +
+                "Referer: test.ru\n");
+        wr.close();
+
+        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(Paths.get(tmpDir.getPath()), "http1", null, null);
+
+        List<HostPort> hp = source.parseHosts();
+
+        Assert.assertTrue(hp.contains(new HostPort("myhost777", 8077)));
+        Assert.assertTrue(hp.contains(new HostPort("myhost888", 80)));
+
+        System.out.println(hp);
     }
 }

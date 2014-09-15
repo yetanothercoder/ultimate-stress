@@ -8,7 +8,7 @@
     </extension>
     <option name="MAIN_CLASS_NAME" value="ru.yetanothercoder.stress.StressClient" />
     <option name="VM_PARAMETERS" value="" />
-    <option name="PROGRAM_PARAMETERS" value="-t 10 -he http://ya.ru/my/app?q=asdf 10" />
+    <option name="PROGRAM_PARAMETERS" value="-h &quot;User-Agent: cool!&quot; -t 10 -he http://ya.ru/my/app?q=asdf 10" />
     <option name="WORKING_DIRECTORY" value="file://$PROJECT_DIR$" />
     <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
     <option name="ALTERNATIVE_JRE_PATH" value="" />

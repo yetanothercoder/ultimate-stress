@@ -138,8 +138,8 @@ public class CountingServer {
                         "SERVER: Stats so far:%n" +
                         "SERVER:  Used %d-%d threads for processing requests%n" +
                         "SERVER:     STATS         AVG       STDEV         MAX %n" +
-                        "SERVER:    Req/Sec %9s %11s %11s%n" +
-                        "SERVER:    OWN Latency %6s %11s %11s%n" +
+                        "SERVER:  Req/Sec %11s %11s %11s%n" +
+                        "SERVER:  OWN Latency %8s %11s %11s%n" +
                         "SERVER:  Overall Latency Distribution%n" +
                         "SERVER:     50%% %10s%n" +
                         "SERVER:     75%% %10s%n" +

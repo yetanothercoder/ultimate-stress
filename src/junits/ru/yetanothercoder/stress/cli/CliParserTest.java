@@ -43,7 +43,7 @@ public class CliParserTest {
     @Test
     public void testEmptyArgs() throws Exception {
         expectedEx.expect(IllegalArgumentException.class);
-        expectedEx.expectMessage("no required params!");
+        expectedEx.expectMessage("no required params: either of url/-d/-f must be set!");
 
         String[] args = new String[]{};
         CliParser.parseAndValidate(args);
@@ -52,7 +52,7 @@ public class CliParserTest {
     @Test
     public void testNoRequired() throws Exception {
         expectedEx.expect(IllegalArgumentException.class);
-        expectedEx.expectMessage("no required params!");
+        expectedEx.expectMessage("no required params: either of url/-d/-f must be set!");
 
         String[] args = new String[]{"-t", "7"};
         CliParser.parseAndValidate(args);

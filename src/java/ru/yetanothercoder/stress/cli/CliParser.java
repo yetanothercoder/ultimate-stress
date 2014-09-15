@@ -2,11 +2,13 @@ package ru.yetanothercoder.stress.cli;
 
 import ru.yetanothercoder.stress.config.StressConfig;
 import ru.yetanothercoder.stress.requests.HttpFileTemplateGenerator;
+import ru.yetanothercoder.stress.utils.HostPort;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 public class CliParser {
 
@@ -26,10 +28,45 @@ public class CliParser {
     }
 
     public static StressConfig parseAndValidate(String... args) throws Exception {
+        final StressConfig.Builder b = parse(args);
+
+        StressConfig config = b.build();
+        if (config.server == 0) {
+            if (config.url == null && config.dir == null && config.prefix == null) {
+                throw noParamsExeption();
+            }
+
+            if (config.dir != null || config.prefix != null) {
+                String hostPort = config.url == null ? null : config.getHostPort();
+                Path dir = config.dir == null ? Paths.get(".") : config.dir;
+                HttpFileTemplateGenerator generator = new HttpFileTemplateGenerator(dir, config.prefix, hostPort, null);
+                if (config.url == null) {
+                    List<HostPort> hosts = generator.parseHosts();
+                    if (hosts.isEmpty()) throw noParamsExeption();
+
+                    // take just first for now
+                    HostPort first = hosts.get(0);
+                    b.url(URI.create(String.format("http://%s:%s/", first.host, first.port)));
+                }
+
+                b.requestGenerator(generator);
+
+                config = b.build();
+            }
+        }
+
+        return config;
+    }
+
+    private static RuntimeException noParamsExeption() {
+        throw new IllegalArgumentException("no required params: either of url/-d/-f must be set!");
+    }
+
+    private static StressConfig.Builder parse(String[] args) {
         final StressConfig.Builder b = new StressConfig.Builder();
         final int size = args.length;
 
-        if (size < 1) throw new IllegalArgumentException("no required params!");
+        if (size < 1) throw noParamsExeption();
 
         for (int i = 0; i < size; i++) {
             final String arg = args[i];
@@ -86,6 +123,11 @@ public class CliParser {
                     if (++i == size) throw new IllegalArgumentException("`-k0` no value!");
                     b.initialTuningFactor(Double.parseDouble(args[i]));
                     break;
+                case "-h":
+                    if (++i == size) throw new IllegalArgumentException("`-h` no value!");
+
+                    b.addHeader(args[i]);
+                    break;
                 case "!":
                     b.rps(-1);
                     break;
@@ -108,22 +150,6 @@ public class CliParser {
 
             }
         }
-
-        StressConfig config = b.build();
-        if (config.server == 0) {
-            if (config.url == null && config.dir == null && config.prefix == null) {
-                throw new IllegalArgumentException("no required params!");
-            }
-
-            if (config.dir != null || config.prefix != null) {
-                String hostPort = config.url == null ? null : config.url.getHost() + ":" + config.url.getPort();
-                Path dir = config.dir == null ? Paths.get(".") : config.dir;
-                b.requestGenerator(new HttpFileTemplateGenerator(dir, config.prefix, hostPort, null));
-
-                config = b.build();
-            }
-        }
-
-        return config;
+        return b;
     }
 }

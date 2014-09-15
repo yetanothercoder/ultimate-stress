@@ -2,6 +2,7 @@ package ru.yetanothercoder.stress.requests;
 
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
+import ru.yetanothercoder.stress.utils.HostPort;
 
 import java.io.File;
 import java.io.FilenameFilter;
@@ -14,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import static java.lang.String.format;
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -27,7 +30,8 @@ import static java.nio.charset.StandardCharsets.UTF_8;
  */
 public class HttpFileTemplateGenerator implements RequestGenerator {
 
-    public static final String HOSTPORT_PLACEHOLDER = "$hp";
+    public static final String HOSTPORT_PLACEHOLDER = "$HP";
+    public static final String CONTENT_LENGTH_PLACEHOLDER = "$CL";
 
     private final String prefix, hostPort;
     private final File dir;
@@ -47,13 +51,14 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
         this.dir = path.toFile();
         if (!dir.exists()) throw new IllegalArgumentException("Incorrect path: " + path);
         this.prefix = filePrefix;
+        this.hostPort = hostPort;
 
         if (replacements != null) {
             replacementList.addAll(fromMap(replacements));
         }
 
         try {
-            templates = readFiles(hostPort);
+            templates = readFiles();
         } catch (IOException e) {
             throw new IllegalArgumentException("failed reading files from " + dir.getAbsolutePath(), e);
         }
@@ -62,8 +67,23 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
             throw new IllegalArgumentException(format(
                     "no templates found in `%s` with prefix `%s`", dir.getAbsolutePath(), prefix));
         }
+    }
 
-        this.hostPort = hostPort;
+    public List<HostPort> parseHosts() {
+        final Pattern p = Pattern.compile("(?m)^Host:\\s+([^:]+)(:([0-9]+))?\\s*$");
+        List<HostPort> result = new ArrayList<>();
+        for (String t : templates) {
+            Matcher m = p.matcher(t);
+            if (m.find()) {
+                String host = m.group(1);
+                if (host != null) {
+                    String portStr = m.group(3);
+                    int port = portStr == null ? 80 : Integer.parseInt(portStr);
+                    result.add(new HostPort(host, port));
+                }
+            }
+        }
+        return result;
     }
 
     private List<Pair> fromMap(Map<String, String> replacements) {
@@ -74,7 +94,7 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
         return result;
     }
 
-    private List<String> readFiles(String hostPort) throws IOException {
+    private List<String> readFiles() throws IOException {
         FilenameFilter filter = new FilenameFilter() {
             @Override
             public boolean accept(File dir, String name) {
@@ -85,13 +105,13 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
         List<String> result = new ArrayList<>();
         File[] files = dir.listFiles(filter);
         for (File file : files) {
-            result.add(compileTemplate(file, hostPort));
+            result.add(compileTemplate(file));
         }
 
         return result;
     }
 
-    private String compileTemplate(File file, String hostPort) throws IOException {
+    private String compileTemplate(File file) throws IOException {
         byte[] bytes = Files.readAllBytes(Paths.get(file.getPath()));
         String contents = new String(bytes, UTF_8);
         String template = fastReplace(contents, HOSTPORT_PLACEHOLDER, hostPort);
@@ -141,6 +161,7 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
         return "HttpFileTemplateGenerator{" +
                 "prefix='" + prefix + '\'' +
                 ", dir=" + dir +
+                ", templates.size=" + templates.size() +
                 ", replacementList.size=" + replacementList.size() +
                 '}';
     }
