@@ -1,7 +1,7 @@
 package ru.yetanothercoder.stress.requests;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 import java.nio.charset.Charset;
 import java.util.List;
@@ -10,7 +10,7 @@ import java.util.List;
  * @author Mikhail Baturov,  6/24/13 11:44 PM
  */
 public class GetHttpRequestGenerator implements RequestGenerator {
-    private final ChannelBuffer GET_REQUEST;
+    private final ByteBuf GET_REQUEST;
 
     public GetHttpRequestGenerator(String host, int port, String query, List<String> headers) {
         String getRequest = "GET %s HTTP/1.1%n";
@@ -30,11 +30,11 @@ public class GetHttpRequestGenerator implements RequestGenerator {
 
         getRequest = String.format(getRequest, query, host, port);
 
-        GET_REQUEST = ChannelBuffers.copiedBuffer(getRequest.getBytes(Charset.defaultCharset()));
+        GET_REQUEST = Unpooled.copiedBuffer(getRequest.getBytes(Charset.defaultCharset()));
     }
 
     @Override
-    public ChannelBuffer next() {
+    public ByteBuf next() {
         return GET_REQUEST;
     }
 

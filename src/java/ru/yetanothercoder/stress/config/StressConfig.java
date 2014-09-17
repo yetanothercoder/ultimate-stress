@@ -27,7 +27,7 @@ final public class StressConfig {
     public final boolean print;
     public final boolean debug;
     public final boolean quiet;
-    public final boolean httpErrors;
+    public final boolean httpStatuses;
     public final int server;
     public final int sample;
     public final SchedulerType type;
@@ -38,7 +38,7 @@ final public class StressConfig {
     public final int serverRandomDelayMs;
     public final List<String> headers;
 
-    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpErrors, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, List<String> headers) {
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpStatuses, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, List<String> headers) {
         this.url = url;
         this.initRps = initRps;
         this.durationSec = durationSec;
@@ -47,7 +47,7 @@ final public class StressConfig {
         this.print = print;
         this.debug = debug;
         this.quiet = quiet;
-        this.httpErrors = httpErrors;
+        this.httpStatuses = httpStatuses;
         this.server = server;
         this.sample = sample;
         this.type = type;
@@ -82,7 +82,7 @@ final public class StressConfig {
                 ", initialTuningFactor=" + initialTuningFactor +
                 ", print=" + print +
                 ", debug=" + debug +
-                ", httpErrors=" + httpErrors +
+                ", httpStatuses=" + httpStatuses +
                 ", server=" + server +
                 ", sample=" + sample +
                 ", type=" + type +
@@ -110,7 +110,7 @@ final public class StressConfig {
         int server = 0;
         int sample = -1;
         SchedulerType exec = HASHEDWHEEL;
-        int readTimeoutMs = 1000, writeTimeoutMs = 1000;
+        int readTimeoutMs = 100, writeTimeoutMs = 100;
         Path dir;
         String prefix;
         RequestGenerator requestGenerator;

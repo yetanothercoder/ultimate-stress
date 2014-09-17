@@ -1,7 +1,7 @@
 package ru.yetanothercoder.stress.requests;
 
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import ru.yetanothercoder.stress.utils.HostPort;
 
 import java.io.File;
@@ -120,7 +120,7 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
     }
 
     @Override
-    public ChannelBuffer next() {
+    public ByteBuf next() {
         String tpl = nextTemplate();
         return serializeResponse(replaceOnEachRequest(tpl));
     }
@@ -141,8 +141,8 @@ public class HttpFileTemplateGenerator implements RequestGenerator {
         return template;
     }
 
-    protected ChannelBuffer serializeResponse(String response) {
-        return ChannelBuffers.wrappedBuffer(response.getBytes(UTF_8));
+    protected ByteBuf serializeResponse(String response) {
+        return Unpooled.wrappedBuffer(response.getBytes(UTF_8));
     }
 
     public static String fastReplace(String text, String name, String value) {

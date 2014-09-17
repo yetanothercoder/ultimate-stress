@@ -52,7 +52,7 @@ public class HttpFileTemplateSourceTest {
     public void testHostPortFromTemplates() throws Exception {
         final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
 
-        File file = File.createTempFile("http1", ".tmp", tmpDir);
+        File file = File.createTempFile("1http", ".tmp", tmpDir);
         file.deleteOnExit();
         PrintWriter wr = new PrintWriter(file);
         wr.print("GET /my/app/?param1=1 HTTP/1.0\n" +
@@ -62,7 +62,7 @@ public class HttpFileTemplateSourceTest {
         wr.close();
 
 
-        file = File.createTempFile("http1", ".tmp", tmpDir);
+        file = File.createTempFile("1http", ".tmp", tmpDir);
         file.deleteOnExit();
         wr = new PrintWriter(file);
         wr.print("GET /my/app/?param2=2 HTTP/1.0\n" +
@@ -71,7 +71,7 @@ public class HttpFileTemplateSourceTest {
                 "Referer: test.ru\n");
         wr.close();
 
-        file = File.createTempFile("http1", ".tmp", tmpDir);
+        file = File.createTempFile("1http", ".tmp", tmpDir);
         file.deleteOnExit();
         wr = new PrintWriter(file);
         wr.print("GET /my/app/?param2=2 HTTP/1.0\n" +
@@ -79,7 +79,7 @@ public class HttpFileTemplateSourceTest {
                 "Referer: test.ru\n");
         wr.close();
 
-        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(Paths.get(tmpDir.getPath()), "http1", null, null);
+        HttpFileTemplateGenerator source = new HttpFileTemplateGenerator(Paths.get(tmpDir.getPath()), "1http", null, null);
 
         List<HostPort> hp = source.parseHosts();
 

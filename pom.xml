@@ -63,9 +63,10 @@
     <dependencies>
         <dependency>
             <groupId>io.netty</groupId>
-            <artifactId>netty</artifactId>
-            <version>3.6.5.Final</version>
+            <artifactId>netty-all</artifactId>
+            <version>4.0.23.Final</version>
         </dependency>
+
 
         <dependency>
             <groupId>net.jcip</groupId>

@@ -1,6 +1,6 @@
 package ru.yetanothercoder.stress.requests;
 
-import org.jboss.netty.buffer.ChannelBuffer;
+import io.netty.buffer.ByteBuf;
 
 /**
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/en
@@ -12,5 +12,5 @@ public interface RequestGenerator {
      *
      * @return request contents
      */
-    ChannelBuffer next();
+    ByteBuf next();
 }

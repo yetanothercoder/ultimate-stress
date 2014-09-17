@@ -1,15 +1,18 @@
 package ru.yetanothercoder.stress;
 
-import org.jboss.netty.bootstrap.ClientBootstrap;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.*;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
-import org.jboss.netty.handler.timeout.ReadTimeoutException;
-import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
-import org.jboss.netty.handler.timeout.WriteTimeoutException;
-import org.jboss.netty.handler.timeout.WriteTimeoutHandler;
-import org.jboss.netty.util.HashedWheelTimer;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.*;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.ReadTimeoutException;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutException;
+import io.netty.handler.timeout.WriteTimeoutHandler;
+import io.netty.util.AttributeKey;
+import io.netty.util.concurrent.DefaultThreadFactory;
 import ru.yetanothercoder.stress.cli.CliParser;
 import ru.yetanothercoder.stress.config.StressConfig;
 import ru.yetanothercoder.stress.server.CountingServer;
@@ -22,8 +25,6 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
-import java.util.Arrays;
-import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -37,7 +38,7 @@ import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
  * Stress Client based on Netty
  * Schedulers requests, count stats, check for error and output all info to STDIN/STDERR
  * <p/>
- * TODO: 1. usage legend 2. custom headers 3. content-length support
+ * TODO: 1. usage legend 2. duration in any units 3. content-length support
  *
  * @author Mikhail Baturov, http://www.yetanothercoder.ru/search/label/stress
  */
@@ -46,16 +47,16 @@ public class StressClient {
     public static final int MILLION = 1_000_000;
     public static final int THREADS = Runtime.getRuntime().availableProcessors();
     public static final int HTTP_STATUS_WIDTH = 20;
+    static AttributeKey<Long> TS_ATTR = AttributeKey.valueOf("TS");
 
     private final SocketAddress addr;
-    private final ClientBootstrap bootstrap;
+    private final Bootstrap bootstrap;
 
     private final CountersHolder ch = new CountersHolder();
 
     private final AtomicInteger dynamicRate = new AtomicInteger(1); // maximum rps ~1M (starting point)
 
     private String name;
-    private final HashedWheelTimer hwTimer = new HashedWheelTimer();
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
     private final ExecutorService requestExecutor = Executors.newFixedThreadPool(THREADS);
     private final Scheduler scheduler;
@@ -76,7 +77,6 @@ public class StressClient {
     private final Metric connStat = new Metric("Conn/s");
 
     public static void main(String[] args) throws Exception {
-
         try {
             StressConfig config = CliParser.parseAndValidate(args);
 
@@ -95,7 +95,6 @@ public class StressClient {
 
                             "*See actual CLI format and docs at https://github.com/yetanothercoder/ultimate-stress/wiki/CLI"
             );
-
             System.exit(1);
         }
     }
@@ -128,29 +127,30 @@ public class StressClient {
         return name;
     }
 
-    private ClientBootstrap initNetty(final int readTimeoutMs, final int writeTimeoutMs) {
-        ClientBootstrap bootstrap = new ClientBootstrap(
-                new NioClientSocketChannelFactory(
-                        Executors.newCachedThreadPool(),
-                        Executors.newCachedThreadPool()));
+    private Bootstrap initNetty(final int readTimeoutMs, final int writeTimeoutMs) {
+        NioEventLoopGroup workers = new NioEventLoopGroup(THREADS * 2, new DefaultThreadFactory("NettyWorker"));
 
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-            @Override
-            public ChannelPipeline getPipeline() throws Exception {
-                ChannelPipeline pipeline = Channels.pipeline();
-                if (readTimeoutMs > 0) {
-                    pipeline.addLast("readTimer",
-                            new ReadTimeoutHandler(hwTimer, readTimeoutMs, MILLISECONDS));
-                }
-                if (writeTimeoutMs > 0) {
-                    pipeline.addLast("writeTimer",
-                            new WriteTimeoutHandler(hwTimer, writeTimeoutMs, MILLISECONDS));
-                }
-                pipeline.addLast("stress", stressClientHandler);
-                return pipeline;
-            }
-        });
-        //bootstrap.setOption("reuseAddress", "true");
+        Bootstrap bootstrap = new Bootstrap()
+                .group(workers)
+                .channel(NioSocketChannel.class)
+                .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.SO_REUSEADDR, true)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 100)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    public void initChannel(SocketChannel ch) throws Exception {
+                        if (readTimeoutMs > 0) {
+                            ch.pipeline().addLast("readTimer",
+                                    new ReadTimeoutHandler(readTimeoutMs, MILLISECONDS));
+                        }
+                        if (writeTimeoutMs > 0) {
+                            ch.pipeline().addLast("writeTimer",
+                                    new WriteTimeoutHandler(writeTimeoutMs, MILLISECONDS));
+                        }
+                        ch.pipeline().addLast("stress", stressClientHandler);
+                    }
+                });
+
         return bootstrap;
     }
 
@@ -276,9 +276,8 @@ public class StressClient {
 
         requestExecutor.shutdownNow();
         scheduler.shutdown();
-        hwTimer.stop();
         statExecutor.shutdown();
-        bootstrap.shutdown();
+
 
         stopped = true;
 
@@ -322,7 +321,7 @@ public class StressClient {
                 formatLatency(respStats.p99)
         );
 
-        if (c.httpErrors && respStats.size > 0) {
+        if (c.httpStatuses && respStats.size > 0) {
             Metric.MetricResults successStats = successResp.calculateAndReset();
             Metric.MetricResults errorStats = errorResp.calculateAndReset();
             int successes = (int) (successStats.size * 1.0 / respStats.size * 100);
@@ -402,9 +401,9 @@ public class StressClient {
     private void sampleRequests(final int sampleSize) {
         System.out.print("request sampling: ");
         long total = 0;
-
-        ChannelBuffer[] sampleAgainstJitOpt = new ChannelBuffer[1000];
-        Arrays.fill(sampleAgainstJitOpt, ChannelBuffers.copiedBuffer("empty".getBytes()));
+        throw new UnsupportedOperationException(); // TODO: implement further
+        /*ByteBuf[] sampleAgainstJitOpt = new ByteBuf[1000];
+        Arrays.fill(sampleAgainstJitOpt, ByteBuf.copiedBuffer("empty".getBytes()));
 
         int tenPercent = sampleSize / 10;
         for (int i = 0, p = 0; i < sampleSize; i++) {
@@ -420,29 +419,38 @@ public class StressClient {
         System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
 
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
-        System.out.printf("random sample: %n%s%n%n", randomRequest);
+        System.out.printf("random sample: %n%s%n%n", randomRequest);*/
     }
 
 
-    private class StressClientHandler extends SimpleChannelUpstreamHandler {
+    @ChannelHandler.Sharable
+    private class StressClientHandler extends ChannelInboundHandlerAdapter {
+
 
         @Override
-        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) throws Exception {
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            ByteBuf m = (ByteBuf) msg;
+
             if (pause) {
-                e.getChannel().close();
+                ctx.channel().close();
                 return;
             }
 
-            Long start = (Long) ctx.getAttachment();
-            ChannelBuffer resp = (ChannelBuffer) e.getMessage();
+            Long start = ctx.attr(TS_ATTR).get();
+            ByteBuf resp = (ByteBuf) msg;
 
-            if (start != null) {
-                final long latency = System.currentTimeMillis() - start;
-                responseSummary.register(latency);
+            final int status = getStatus(resp);
+            if (status > 0) { // beginning of response
+                if (start != null) {
+                    final long latency = System.currentTimeMillis() - start;
+                    responseSummary.register(latency);
 
-                if (c.httpErrors) {
-                    countStatuses(resp, latency);
+                    if (c.httpStatuses) {
+                        countStatuses(status, latency);
+                    }
                 }
+
+                ch.received.incrementAndGet();
             }
 
             ch.receivedBytes.addAndGet(resp.capacity());
@@ -451,12 +459,9 @@ public class StressClient {
             }
 
 
-            ch.received.incrementAndGet();
         }
 
-        private void countStatuses(ChannelBuffer resp, long latency) {
-            String statusLine = resp.toString(0, HTTP_STATUS_WIDTH, Charset.defaultCharset());
-            int status = Utils.parseStatus(statusLine);
+        private void countStatuses(int status, long latency) {
             if (status >= 200 && status < 400) {
                 successResp.register(latency);
             } else if (status >= 400) {
@@ -464,18 +469,24 @@ public class StressClient {
             }
         }
 
+        private int getStatus(ByteBuf resp) {
+            String statusLine = resp.toString(0, HTTP_STATUS_WIDTH, Charset.defaultCharset());
+            return Utils.parseStatus(statusLine);
+        }
+
         @Override
-        public void channelConnected(final ChannelHandlerContext ctx, final ChannelStateEvent e) throws Exception {
+        public void channelActive(final ChannelHandlerContext ctx) throws Exception {
             if (pause) {
-                e.getChannel().close();
+                ctx.close();
                 return;
             }
+
             requestExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    ChannelBuffer req = c.requestGenerator.next();
-                    ctx.setAttachment(System.currentTimeMillis());
-                    e.getChannel().write(req);
+                    ByteBuf req = c.requestGenerator.next();
+                    ctx.attr(TS_ATTR).set(System.currentTimeMillis());
+                    ctx.write(req);
 
                     ch.sentBytes.addAndGet(req.capacity());
                     ch.total.incrementAndGet();
@@ -486,10 +497,13 @@ public class StressClient {
         }
 
         @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
-            e.getChannel().close();
+        public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
 
-            Throwable exc = e.getCause();
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable exc) throws Exception {
+            ctx.close();
 
             if (exc instanceof ConnectTimeoutException ||
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {

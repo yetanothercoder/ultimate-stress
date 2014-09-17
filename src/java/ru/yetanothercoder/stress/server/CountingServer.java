@@ -1,14 +1,19 @@
 package ru.yetanothercoder.stress.server;
 
-import org.jboss.netty.bootstrap.ServerBootstrap;
-import org.jboss.netty.buffer.ChannelBuffer;
-import org.jboss.netty.buffer.ChannelBuffers;
-import org.jboss.netty.channel.*;
-import org.jboss.netty.channel.socket.nio.NioServerSocketChannelFactory;
-import org.jboss.netty.util.HashedWheelTimer;
-import org.jboss.netty.util.Timeout;
-import org.jboss.netty.util.Timer;
-import org.jboss.netty.util.TimerTask;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.Timer;
+import io.netty.util.TimerTask;
 import ru.yetanothercoder.stress.stat.CountersHolder;
 import ru.yetanothercoder.stress.stat.Metric;
 
@@ -29,7 +34,7 @@ public class CountingServer {
 
     public final CountersHolder ch = new CountersHolder();
 
-    public static final ChannelBuffer RESP204 = ChannelBuffers.copiedBuffer(String.format(
+    public static final ByteBuf RESP204 = Unpooled.copiedBuffer(String.format(
                     "HTTP/1.1 204 No Content%n" +
                             "Server: github.com/yetanothercoder/ultimate-stress%n" +
                             "Content-Length: 0%n%n"),
@@ -49,6 +54,8 @@ public class CountingServer {
 
     private final Metric rpsStat = new Metric("Req/s");
     private final Metric ownLatency = new Metric("Own Response Latency");
+    private NioEventLoopGroup boss;
+    private NioEventLoopGroup workers;
 
     public CountingServer(int port) {
         this(port, -1, false);
@@ -58,6 +65,8 @@ public class CountingServer {
         this.randomDelay = randomDelay;
         this.port = port;
         this.debug = debug;
+        boss = new NioEventLoopGroup();
+        workers = new NioEventLoopGroup();
     }
 
     public void start() {
@@ -66,18 +75,15 @@ public class CountingServer {
         System.out.println();
 
         // Configure the server.
-        bootstrap = new ServerBootstrap(
-                new NioServerSocketChannelFactory(
-                        Executors.newCachedThreadPool(),
-                        Executors.newCachedThreadPool()));
-
-        // Set up the pipeline factory.
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-            @Override
-            public ChannelPipeline getPipeline() throws Exception {
-                return Channels.pipeline(new CountingHandler());
-            }
-        });
+        bootstrap = new ServerBootstrap()
+                .group(boss, workers)
+                .channel(NioServerSocketChannel.class)
+                .childHandler(new ChannelInitializer<SocketChannel>() { // (4)
+                    @Override
+                    public void initChannel(SocketChannel ch) throws Exception {
+                        ch.pipeline().addLast(new CountingHandler());
+                    }
+                });
 
         // Bind and start to accept incoming connections.
         bootstrap.bind(new InetSocketAddress(port));
@@ -114,9 +120,9 @@ public class CountingServer {
 
         System.out.println("SERVER: stopping...");
 
-        bootstrap.shutdown();
         hwTimer.stop();
-
+        boss.shutdownGracefully();
+        workers.shutdownGracefully();
         stopped = true;
 
         printSummaryStat();
@@ -162,13 +168,14 @@ public class CountingServer {
         if (debug) System.err.printf("%nSERVER.DEBUG, Metrics: %s, %s%n", respStats, rpsStats);
     }
 
-    private class CountingHandler extends SimpleChannelUpstreamHandler {
+    private class CountingHandler extends ChannelInboundHandlerAdapter {
+
         @Override
-        public void messageReceived(ChannelHandlerContext ctx, final MessageEvent e) throws Exception {
+        public void channelRead(final ChannelHandlerContext ctx, Object msg) { // (2)
             final long start = System.currentTimeMillis();
             ch.received.incrementAndGet();
 
-            ChannelBuffer message = (ChannelBuffer) e.getMessage();
+            ByteBuf message = (ByteBuf) msg;
 
             ch.receivedBytes.addAndGet(message.capacity());
 
@@ -176,37 +183,35 @@ public class CountingServer {
                 System.out.printf("received: %s%n", new String(message.array()));
             }
 
-            final Channel channel = e.getChannel();
-
             if (randomDelay > 0) {
                 int delay = r.nextInt(randomDelay);
 
                 hwTimer.newTimeout(new TimerTask() {
                     @Override
                     public void run(Timeout timeout) throws Exception {
-                        if (!timeout.isCancelled() && channel.isOpen()) {
-                            writeAnswer(channel);
+                        if (!timeout.isCancelled() && ctx.channel().isOpen()) {
+                            writeAnswer(ctx);
                             ownLatency.register(System.currentTimeMillis() - start);
                         }
                     }
                 }, delay, delayUnit);
             } else {
-                writeAnswer(channel);
+                writeAnswer(ctx);
                 ownLatency.register(System.currentTimeMillis() - start);
             }
         }
 
         @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) throws Exception {
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable e) throws Exception {
             ch.oe.incrementAndGet();
             ch.errors.incrementAndGet();
 
             if (debug) {
-                e.getCause().printStackTrace(System.err);
+                e.printStackTrace(System.err);
             }
         }
 
-        private void writeAnswer(Channel channel) {
+        private void writeAnswer(ChannelHandlerContext channel) {
             channel.write(RESP204).addListener(ChannelFutureListener.CLOSE);
         }
     }

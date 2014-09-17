@@ -81,7 +81,7 @@ public class CliParser {
                 case "-pr":
                     b.print();
                     break;
-                case "-he":
+                case "-hs":
                     b.httpErrors();
                     break;
                 case "-s":

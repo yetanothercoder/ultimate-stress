@@ -77,7 +77,7 @@ public class CliParserTest {
     @Test
     public void testNormalClient() throws Exception {
         String[] args = new String[]{"-t", "7", "-k", "1.5", "-k0", "1.4", "-d", ".", "-f", "http",
-                "-pr", "-debug", "-he", "-rt", "77", "-wt", "88",
+                "-pr", "-debug", "-hs", "-rt", "77", "-wt", "88",
                 "http://myhost:8080/myapp?p1=1&p2=2", "777"};
 
         StressConfig config = CliParser.parseAndValidate(args);
@@ -89,7 +89,7 @@ public class CliParserTest {
         Assert.assertEquals(config.prefix, "http");
         Assert.assertTrue(config.print);
         Assert.assertTrue(config.debug);
-        Assert.assertTrue(config.httpErrors);
+        Assert.assertTrue(config.httpStatuses);
         Assert.assertTrue(config.requestGenerator instanceof HttpFileTemplateGenerator);
         Assert.assertTrue(config.readTimeoutMs == 77);
         Assert.assertTrue(config.writeTimeoutMs == 88);

@@ -1,13 +1,9 @@
 package ru.yetanothercoder.stress.utils;
 
-import org.jboss.netty.bootstrap.ClientBootstrap;
-import org.jboss.netty.channel.*;
-import org.jboss.netty.channel.group.ChannelGroup;
-import org.jboss.netty.channel.group.DefaultChannelGroup;
-import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import io.netty.bootstrap.Bootstrap;
+import io.netty.channel.ChannelException;
+import io.netty.channel.ChannelFuture;
 
-import java.net.BindException;
-import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.util.concurrent.*;
@@ -17,8 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * @author Mikhail Baturov,  6/28/13 10:52 PM
  */
 public class ConnectionLimitFinder implements Callable<Integer> {
-    private final ClientBootstrap bootstrap;
-    private final ChannelHandler handler = new ErrorHandler();
+    private final Bootstrap bootstrap;
+    //    private final ChannelHandler handler = new ErrorHandler();
     public final AtomicInteger connected = new AtomicInteger(0);
     private final AtomicInteger errors = new AtomicInteger(0);
     private final String host;
@@ -26,31 +22,31 @@ public class ConnectionLimitFinder implements Callable<Integer> {
     private final boolean debug;
     public volatile boolean stop = false;
     private final ExecutorService executor = Executors.newCachedThreadPool();
-    public final ChannelGroup opened = new DefaultChannelGroup();
+//    public final ChannelGroup opened = new DefaultChannelGroup();
 
     public ConnectionLimitFinder(String host, int port) {
         this.host = host;
         this.port = port;
         this.debug = false;
 
-        bootstrap = new ClientBootstrap(new NioClientSocketChannelFactory(executor, executor, 1));
+        bootstrap = new Bootstrap();//new NioClientSocketChannelFactory(executor, executor, 1));
 
 
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
+        /*bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
             @Override
             public ChannelPipeline getPipeline() throws Exception {
                 ChannelPipeline pipeline = Channels.pipeline();
                 pipeline.addLast("errors", handler);
                 return pipeline;
             }
-        });
+        });*/
     }
 
     private boolean handleLimitErrors(Throwable e) {
         if (debug) {
             e.printStackTrace(System.err);
         }
-        return  (errors.incrementAndGet() > 10);
+        return (errors.incrementAndGet() > 10);
     }
 
     @Override
@@ -71,13 +67,13 @@ public class ConnectionLimitFinder implements Callable<Integer> {
 
 //            TimeUnit.MICROSECONDS.sleep(1);
         }
-        opened.close();
+//        opened.close();
         executor.shutdownNow();
-        bootstrap.shutdown();
+//        bootstrap.shutdown();
         return connected.get();
     }
 
-    private class ErrorHandler extends SimpleChannelUpstreamHandler {
+    /*private class ErrorHandler extends SimpleChannelInboundHandler {
         @Override
         public void channelConnected(ChannelHandlerContext ctx, ChannelStateEvent e) throws Exception {
             opened.add(e.getChannel());
@@ -92,7 +88,12 @@ public class ConnectionLimitFinder implements Callable<Integer> {
                 stop = handleLimitErrors(exc);
             }
         }
-    }
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
+
+        }
+    }*/
 
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
