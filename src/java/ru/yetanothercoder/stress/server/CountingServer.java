@@ -24,7 +24,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
-import static ru.yetanothercoder.stress.StressClient.THREADS;
+import static ru.yetanothercoder.stress.StressClient.NUM_OF_CORES;
 import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
 
 /**
@@ -152,7 +152,7 @@ public class CountingServer {
                         "SERVER:     90%% %10s%n" +
                         "SERVER:     99%% %10s%n",
 
-                THREADS, THREADS * 2,
+                NUM_OF_CORES, NUM_OF_CORES * 2,
                 rpsStats.av, rpsStats.std, rpsStats.max,
                 formatLatency(respStats.av), formatLatency(respStats.std), formatLatency(respStats.max),
                 formatLatency(respStats.p50),
@@ -212,7 +212,7 @@ public class CountingServer {
         }
 
         private void writeAnswer(ChannelHandlerContext channel) {
-            channel.write(RESP204).addListener(ChannelFutureListener.CLOSE);
+            channel.writeAndFlush(RESP204.retain()).addListener(ChannelFutureListener.CLOSE);
         }
     }
 

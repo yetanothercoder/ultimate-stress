@@ -3,6 +3,7 @@ package ru.yetanothercoder.stress;
 
 import io.netty.bootstrap.Bootstrap;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.SocketChannel;
@@ -25,6 +26,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -45,9 +48,11 @@ import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
 public class StressClient {
 
     public static final int MILLION = 1_000_000;
-    public static final int THREADS = Runtime.getRuntime().availableProcessors();
+    public static final int NUM_OF_CORES = Runtime.getRuntime().availableProcessors();
     public static final int HTTP_STATUS_WIDTH = 20;
-    static AttributeKey<Long> TS_ATTR = AttributeKey.valueOf("TS");
+    static final AttributeKey<Long> TS_ATTR = AttributeKey.valueOf("TS");
+    static final AttributeKey<Integer> STATUS_ATTR = AttributeKey.valueOf("status");
+    static final AttributeKey<Boolean> READ_ATTR = AttributeKey.valueOf("read");
 
     private final SocketAddress addr;
     private final Bootstrap bootstrap;
@@ -58,7 +63,7 @@ public class StressClient {
 
     private String name;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(THREADS);
+    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(NUM_OF_CORES);
     private final Scheduler scheduler;
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
@@ -75,6 +80,8 @@ public class StressClient {
     private final Metric errorResp = new Metric("Error Responses");
     private final Metric rpsStat = new Metric("Req/s");
     private final Metric connStat = new Metric("Conn/s");
+
+    Metric.MetricResults respStats;
 
     public static void main(String[] args) throws Exception {
         try {
@@ -112,7 +119,7 @@ public class StressClient {
 
         scheduler = c.type.createScheduler();
 
-        bootstrap = initNetty(c.readTimeoutMs, c.writeTimeoutMs);
+        bootstrap = initNetty(c.readTimeoutMs, c.writeTimeoutMs, 100, stressClientHandler);
 
         name = generateName();
     }
@@ -127,15 +134,15 @@ public class StressClient {
         return name;
     }
 
-    private Bootstrap initNetty(final int readTimeoutMs, final int writeTimeoutMs) {
-        NioEventLoopGroup workers = new NioEventLoopGroup(THREADS * 2, new DefaultThreadFactory("NettyWorker"));
+    public static Bootstrap initNetty(final int readTimeoutMs, final int writeTimeoutMs, final int connTimeoutMs, final ChannelHandler clientHandler) {
+        NioEventLoopGroup workers = new NioEventLoopGroup(NUM_OF_CORES, new DefaultThreadFactory("NettyWorker"));
 
         Bootstrap bootstrap = new Bootstrap()
                 .group(workers)
                 .channel(NioSocketChannel.class)
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.SO_REUSEADDR, true)
-                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 100)
+                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connTimeoutMs)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
@@ -147,7 +154,7 @@ public class StressClient {
                             ch.pipeline().addLast("writeTimer",
                                     new WriteTimeoutHandler(writeTimeoutMs, MILLISECONDS));
                         }
-                        ch.pipeline().addLast("stress", stressClientHandler);
+                        ch.pipeline().addLast("stress", clientHandler);
                     }
                 });
 
@@ -277,7 +284,7 @@ public class StressClient {
         requestExecutor.shutdownNow();
         scheduler.shutdown();
         statExecutor.shutdown();
-
+        bootstrap.group().shutdownGracefully();
 
         stopped = true;
 
@@ -293,8 +300,8 @@ public class StressClient {
         double receivedMb = ch.receivedBytes.get() / 1e6;
         double sentMb = ch.sentBytes.get() / 1e6;
 
+        respStats = responseSummary.calculateAndReset();
         Metric.MetricResults connStats = connStat.calculateAndReset();
-        Metric.MetricResults respStats = responseSummary.calculateAndReset();
         Metric.MetricResults rpsStats = rpsStat.calculateAndReset();
         long totalRps = respStats.size / totalDurationSec;
 
@@ -312,7 +319,7 @@ public class StressClient {
                         "     99%% %10s%n",
 
                 c.url, formatLatency(totalMs),
-                THREADS, THREADS * 2, connStats.p50,
+                NUM_OF_CORES, NUM_OF_CORES * 2, connStats.p50,
                 formatLatency(respStats.av), formatLatency(respStats.std), formatLatency(respStats.max),
                 rpsStats.av, rpsStats.std, rpsStats.max,
                 formatLatency(respStats.p50),
@@ -401,16 +408,15 @@ public class StressClient {
     private void sampleRequests(final int sampleSize) {
         System.out.print("request sampling: ");
         long total = 0;
-        throw new UnsupportedOperationException(); // TODO: implement further
-        /*ByteBuf[] sampleAgainstJitOpt = new ByteBuf[1000];
-        Arrays.fill(sampleAgainstJitOpt, ByteBuf.copiedBuffer("empty".getBytes()));
+        ByteBuf[] sampleAgainstJitOpt = new ByteBuf[1000];
+        Arrays.fill(sampleAgainstJitOpt, Unpooled.copiedBuffer("empty".getBytes()));
 
         int tenPercent = sampleSize / 10;
         for (int i = 0, p = 0; i < sampleSize; i++) {
             if (i % tenPercent == 0) System.out.printf(" %,d%%", ++p * 10);
 
             long t0 = System.nanoTime();
-            ChannelBuffer request = c.requestGenerator.next();
+            ByteBuf request = c.requestGenerator.next();
             total += System.nanoTime() - t0;
 
             sampleAgainstJitOpt[new Random().nextInt(1000)] = request;
@@ -419,36 +425,45 @@ public class StressClient {
         System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
 
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
-        System.out.printf("random sample: %n%s%n%n", randomRequest);*/
+        System.out.printf("random sample: %n%s%n%n", randomRequest);
     }
 
 
     @ChannelHandler.Sharable
-    private class StressClientHandler extends ChannelInboundHandlerAdapter {
-
+    private class StressClientHandler extends SimpleChannelInboundHandler<ByteBuf> {
 
         @Override
-        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-            ByteBuf m = (ByteBuf) msg;
+        public void channelActive(final ChannelHandlerContext ctx) throws Exception {
+            if (pause) {
+                ctx.close();
+                return;
+            }
 
+            requestExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    ByteBuf req = c.requestGenerator.next();
+                    ctx.attr(TS_ATTR).set(System.currentTimeMillis());
+                    ctx.writeAndFlush(req);
+
+                    ch.sentBytes.addAndGet(req.capacity());
+                    ch.total.incrementAndGet();
+                }
+            });
+
+            ch.sent.incrementAndGet();
+        }
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, ByteBuf resp) throws Exception {
             if (pause) {
                 ctx.channel().close();
                 return;
             }
 
-            Long start = ctx.attr(TS_ATTR).get();
-            ByteBuf resp = (ByteBuf) msg;
-
             final int status = getStatus(resp);
             if (status > 0) { // beginning of response
-                if (start != null) {
-                    final long latency = System.currentTimeMillis() - start;
-                    responseSummary.register(latency);
-
-                    if (c.httpStatuses) {
-                        countStatuses(status, latency);
-                    }
-                }
+                ctx.attr(STATUS_ATTR).set(status);
 
                 ch.received.incrementAndGet();
             }
@@ -475,30 +490,22 @@ public class StressClient {
         }
 
         @Override
-        public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-            if (pause) {
-                ctx.close();
-                return;
-            }
-
-            requestExecutor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    ByteBuf req = c.requestGenerator.next();
-                    ctx.attr(TS_ATTR).set(System.currentTimeMillis());
-                    ctx.write(req);
-
-                    ch.sentBytes.addAndGet(req.capacity());
-                    ch.total.incrementAndGet();
-                }
-            });
-
-            ch.sent.incrementAndGet();
-        }
-
-        @Override
         public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+            // work-around against netty bug
+            // http://stackoverflow.com/questions/25972426/netty-4-channelinboundhandleradapter-channelreadcomplete-called-twice
+            if (ctx.attr(READ_ATTR).get() != null) return;
 
+            Long start = ctx.attr(TS_ATTR).get();
+            if (start != null) {
+                final long latency = System.currentTimeMillis() - start;
+                responseSummary.register(latency);
+
+                Integer status = ctx.attr(STATUS_ATTR).get();
+                if (status != null && c.httpStatuses) {
+                    countStatuses(status, latency);
+                }
+            }
+            ctx.attr(READ_ATTR).set(true);
         }
 
         @Override

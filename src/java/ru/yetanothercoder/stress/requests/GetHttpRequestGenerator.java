@@ -35,7 +35,7 @@ public class GetHttpRequestGenerator implements RequestGenerator {
 
     @Override
     public ByteBuf next() {
-        return GET_REQUEST;
+        return GET_REQUEST.retain();
     }
 
     @Override

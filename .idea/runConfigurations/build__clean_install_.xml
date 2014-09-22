@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="ultimate-stress [clean,install]" type="MavenRunConfiguration" factoryName="Maven">
+  <configuration default="false" name="build [clean,install]" type="MavenRunConfiguration" factoryName="Maven">
     <MavenSettings>
       <option name="myGeneralSettings" />
       <option name="myRunnerSettings" />
