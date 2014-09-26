@@ -10,10 +10,7 @@ import io.netty.channel.socket.nio.NioSocketChannel;
 import io.netty.handler.timeout.ReadTimeoutHandler;
 import io.netty.handler.timeout.WriteTimeoutHandler;
 import io.netty.util.AttributeKey;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
+import org.junit.*;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.Charset;
@@ -21,6 +18,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
@@ -57,37 +55,49 @@ public class NettyReusableChannelsTest {
     }
 
     @Test
-    public void testDoubleReadComplete() throws Exception {
+    public void testReadComplete() throws Exception {
         final String host = "www.google.de";
         final AttributeKey<Boolean> rc = AttributeKey.valueOf("rc");
-        final CountDownLatch count = new CountDownLatch(20);
+        final int respNum = 10;
+        final CountDownLatch count = new CountDownLatch(respNum);
+        int timeoutSec = 1;
+
+        final AtomicInteger msgNum = new AtomicInteger(0);
+        final AtomicInteger reqNum = new AtomicInteger(0);
+        String request = String.format(
+                "GET / HTTP/1.1\n" +
+                        "Host: " + host + "\n" +
+                        "\n\n"
+        );
+        final ByteBuf req = Unpooled.wrappedBuffer(request.getBytes(Charset.defaultCharset()));
+
         bootstrap = new Bootstrap()
                 .group(new NioEventLoopGroup())
                 .channel(NioSocketChannel.class)
+                .option(ChannelOption.MAX_MESSAGES_PER_READ, Integer.MAX_VALUE)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
                             @Override
                             public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                                String request = String.format(
-                                        "GET / HTTP/1.1\n" +
-                                                "Host: " + host + "\n" +
-                                                "\n\n"
-                                );
-                                System.out.println("sending...");
-                                System.out.println(request);
+                                System.out.println("active, sending...");
 
-                                ByteBuf req = Unpooled.wrappedBuffer(request.getBytes(Charset.defaultCharset()));
-                                ctx.writeAndFlush(req);
+                                ctx.writeAndFlush(req.retain());
                             }
 
                             @Override
                             public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-                                Boolean read = ctx.attr(rc).get();
-                                if (read == null) {
+                                count.countDown();
+//                                Boolean read = ctx.attr(rc).get();
+//                                if (read == null) {
                                     ctx.attr(rc).set(true);
-                                    System.err.println("777 read complete");
+                                System.err.printf("777 read complete, r=%s, m=%s%n", reqNum.incrementAndGet(), msgNum.get());
+//                                }
+
+                                if (ctx.channel().isActive()) {
+                                    System.out.println("complete, sending...");
+                                    ctx.writeAndFlush(req.retain());
                                 }
                             }
 
@@ -95,9 +105,8 @@ public class NettyReusableChannelsTest {
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 ByteBuf resp = (ByteBuf) msg;
 
-                                count.countDown();
-
-                                System.out.printf("****************************************************>>>>> %s%n", Thread.currentThread().getName());
+                                System.out.printf("****************************************************>>>>> n=%s in %s%n",
+                                        msgNum.incrementAndGet(), Thread.currentThread().getName());
                                 System.out.println(resp.toString(Charset.defaultCharset()));
                                 System.out.println("<<<<<****************************************************");
 
@@ -111,37 +120,63 @@ public class NettyReusableChannelsTest {
         ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, 80));
         future.awaitUninterruptibly();
 
-        count.await(3, TimeUnit.SECONDS);
+
+        count.await(timeoutSec, TimeUnit.SECONDS);
+        System.out.flush();
+
+        Assert.assertTrue(reqNum.get() == respNum);
     }
 
-    @Test
-    public void testYa() throws Exception {
+    final AttributeKey<Integer> REQNUM_ATTR = AttributeKey.valueOf("reqnum");
 
-        final CountDownLatch count = new CountDownLatch(20);
+    final AtomicInteger reqNum = new AtomicInteger(0);
+    final AtomicInteger respNum = new AtomicInteger(0);
+
+    //    @Test
+    public void testClosedConnection() throws Exception {
+
+        final CountDownLatch count = new CountDownLatch(2);
+        final String host = "ya.ru";
+        final String uri = "/";
+
         bootstrap = new Bootstrap()
                 .group(workerGroup)
                 .channel(NioSocketChannel.class)
                 .option(ChannelOption.SO_KEEPALIVE, true)
+                .option(ChannelOption.MAX_MESSAGES_PER_READ, Integer.MAX_VALUE)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
                         ch.pipeline().addLast(
-                                new ReadTimeoutHandler(100, MILLISECONDS),
-                                new WriteTimeoutHandler(100, MILLISECONDS));
+                                new ReadTimeoutHandler(5000, MILLISECONDS),
+                                new WriteTimeoutHandler(5000, MILLISECONDS));
 
                         ch.pipeline().addLast(new ChannelInboundHandlerAdapter() {
                             @Override
                             public void channelActive(ChannelHandlerContext ctx) throws Exception {
-                                sendToChannel(ctx);
+                                sendToChannel(ctx, host, uri);
                             }
 
                             @Override
                             public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-                                System.out.println("777 read complete");
+                                count.countDown();
+//                                if (ctx.attr(READ_ATTR).get() != null) return;
+
+//                                ctx.attr(READ_ATTR).set(true);
+                                int current = ctx.attr(REQNUM_ATTR).get();
+                                if (respNum.incrementAndGet() > current) { // netty issues
+                                    System.err.println("777 idle read complete!");
+                                    respNum.decrementAndGet();
+                                    return;
+                                }
+
+                                System.out.printf("777 read complete, reqnum=%s, respnum=%s %n", current, respNum.get());
 
                                 if (ctx.channel().isActive() && ctx.channel().isWritable()) {
                                     System.out.println("777 Active, sending again...");
-                                    sendToChannel(ctx);
+                                    sendToChannel(ctx, host, uri);
+                                } else {
+                                    System.out.println("777 Not Active after reading");
                                 }
                             }
 
@@ -164,8 +199,6 @@ public class NettyReusableChannelsTest {
                             public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
                                 ByteBuf resp = (ByteBuf) msg;
 
-                                count.countDown();
-
                                 int size = resp.capacity() - 1;
                                 //                        System.out.println(size);
                                 System.out.printf("****************************************************>>>>> %s%n", Thread.currentThread().getName());
@@ -186,14 +219,14 @@ public class NettyReusableChannelsTest {
 //        bootstrap.setOption("keepAlive", true);
 //        bootstrap.setOption("receiveBufferSize", 1_048_576);
 
-        ChannelFuture future = bootstrap.connect(new InetSocketAddress("ya.ru", 80));
+        ChannelFuture future = bootstrap.connect(new InetSocketAddress(host, 80));
         future.awaitUninterruptibly();
         System.out.println("connected!");
 
         count.await(5, TimeUnit.SECONDS);
     }
 
-    private void sendToChannel(final ChannelHandlerContext ctx) {
+    private void sendToChannel(final ChannelHandlerContext ctx, final String host, final String uri) {
         if (ctx.channel().isOpen()) {
             System.out.println("open, sending...");
 
@@ -201,8 +234,8 @@ public class NettyReusableChannelsTest {
                 @Override
                 public void run() {
                     String request = String.format(
-                            "GET / HTTP/1.1\n" +
-                                    "Host: ya.ru\n" +
+                            "GET " + uri + " HTTP/1.1\n" +
+                                    "Host: " + host + "\n" +
                                     "Connection: Keep-Alive\n" +
                                     "Cache-Control: max-age=0\n" +
                                     "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8\n" +
@@ -212,8 +245,9 @@ public class NettyReusableChannelsTest {
                                     "\n\n"
                     );
 
+                    ctx.attr(REQNUM_ATTR).set(reqNum.incrementAndGet());
                     ByteBuf req = Unpooled.wrappedBuffer(request.getBytes(Charset.defaultCharset()));
-                    ctx.write(req);
+                    ctx.writeAndFlush(req);
                 }
             });
 
