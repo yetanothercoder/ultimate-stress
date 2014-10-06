@@ -7,7 +7,7 @@ import org.junit.Test;
 import ru.yetanothercoder.stress.config.StressConfig;
 import ru.yetanothercoder.stress.server.CountingServer;
 
-import java.util.concurrent.TimeUnit;
+import static java.util.concurrent.TimeUnit.SECONDS;
 
 /**
  * @author Mikhail Baturov, 7/4/13 2:29 PM
@@ -28,15 +28,16 @@ public class StressClientTest {
 
     @Test
     public void testReceivingAndSending() throws Exception {
-        StressConfig config = new StressConfig.Builder().url("http://localhost:8888/").rps(100).build();
+        StressConfig config = new StressConfig.Builder().url("http://localhost:8888/").rps(100).readTimeout(1000).writeTimeout(1000)
+                .build();
         StressClient client = new StressClient(config);
-        TimeUnit.SECONDS.sleep(1);
+        SECONDS.sleep(1);
 
         client.start();
-        TimeUnit.SECONDS.sleep(3);
+        SECONDS.sleep(10);
 
         client.stop(true);
-        TimeUnit.SECONDS.sleep(1);
+        SECONDS.sleep(1);
 //        System.out.println(client.respStats.size + " " + server.ch.total.get());
         Assert.assertTrue(client.respStats.size - server.ch.total.get() < 5);
     }
@@ -46,7 +47,7 @@ public class StressClientTest {
         StressClient client = new StressClient(new StressConfig.Builder().url("http://ya.ru").build());
         client.start();
 
-        TimeUnit.SECONDS.sleep(5);
+        SECONDS.sleep(5);
 
         client.stop(true);
     }

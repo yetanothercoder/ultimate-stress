@@ -3,7 +3,6 @@ package ru.yetanothercoder.stress.server;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
@@ -212,7 +211,7 @@ public class CountingServer {
         }
 
         private void writeAnswer(ChannelHandlerContext channel) {
-            channel.writeAndFlush(RESP204.retain()).addListener(ChannelFutureListener.CLOSE);
+            channel.writeAndFlush(RESP204.retain());//.addListener(ChannelFutureListener.CLOSE);
         }
     }
 

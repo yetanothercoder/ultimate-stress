@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static ru.yetanothercoder.stress.timer.SchedulerType.HASHEDWHEEL;
+import static ru.yetanothercoder.stress.timer.SchedulerType.STANDARD;
 
 /**
  * Full config for client & server mode
@@ -36,6 +36,7 @@ final public class StressConfig {
     public final Path dir;
     public final String prefix;
     public final int serverRandomDelayMs;
+    public final int connectionNum = 100;
     public final List<String> headers;
 
     public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpStatuses, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, List<String> headers) {
@@ -109,7 +110,7 @@ final public class StressConfig {
         boolean httpErrors = false;
         int server = 0;
         int sample = -1;
-        SchedulerType exec = HASHEDWHEEL;
+        SchedulerType exec = STANDARD;
         int readTimeoutMs = 100, writeTimeoutMs = 100;
         Path dir;
         String prefix;

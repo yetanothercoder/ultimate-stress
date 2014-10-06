@@ -27,7 +27,9 @@ import java.io.IOException;
 import java.net.*;
 import java.nio.charset.Charset;
 import java.util.Arrays;
+import java.util.Deque;
 import java.util.Random;
+import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -52,7 +54,6 @@ public class StressClient {
     public static final int HTTP_STATUS_WIDTH = 20;
     static final AttributeKey<Long> TS_ATTR = AttributeKey.valueOf("TS");
     static final AttributeKey<Integer> STATUS_ATTR = AttributeKey.valueOf("status");
-    static final AttributeKey<Boolean> READ_ATTR = AttributeKey.valueOf("read");
 
     private final SocketAddress addr;
     private final Bootstrap bootstrap;
@@ -63,8 +64,11 @@ public class StressClient {
 
     private String name;
     private final ScheduledExecutorService statExecutor = Executors.newSingleThreadScheduledExecutor();
-    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(NUM_OF_CORES);
+    private final ExecutorService requestExecutor = Executors.newFixedThreadPool(NUM_OF_CORES, new DefaultThreadFactory("request-sender"));
     private final Scheduler scheduler;
+
+    private final Deque<ChannelHandlerContext> connectionQueue = new ConcurrentLinkedDeque<>();
+    private final AtomicInteger quickSize = new AtomicInteger(0);
 
     private final StressClientHandler stressClientHandler = new StressClientHandler();
 
@@ -189,9 +193,9 @@ public class StressClient {
         scheduler.startAtFixedRate(new Runnable() {
             @Override
             public void run() {
-                if (!pause) sendOne();
+                if (!pause) sendRequest();
             }
-        }, dynamicRate);
+        }, dynamicRate.get());
 
         statExecutor.scheduleAtFixedRate(new Runnable() {
             @Override
@@ -235,21 +239,22 @@ public class StressClient {
     }
 
     private void printPeriodicStats() {
-        int conn = ch.connected.get();
+        /*int conn = ch.connected.get();
         if (dynamicRate.get() > 1) {
             connStat.register(conn);
             ch.connected.set(0);
-        }
+        }*/
         final int sentSoFar = ch.sent.getAndSet(0);
         rpsStat.register(sentSoFar);
 
         if (c.quiet) {
             System.out.print(".");
         } else {
-            System.out.printf("STAT: sent=%,6d, received=%,6d, connected=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, oe=%,d%n",
+            System.out.printf("STAT: sent=%,6d, received=%,6d, connections=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, oe=%,d%n",
                     sentSoFar,
                     ch.received.getAndSet(0),
-                    conn, dynamicRate.get(),
+                    quickSize.getAndSet(connectionQueue.size()),
+                    dynamicRate.get(),
                     ch.te.getAndSet(0),
                     ch.be.getAndSet(0),
                     ch.ce.getAndSet(0),
@@ -259,10 +264,19 @@ public class StressClient {
         }
     }
 
-    private void sendOne() {
+
+    private ChannelHandlerContext borrowConnectionOrCreateNew() {
+        if (quickSize.get() < c.connectionNum) {
+            initNewConnection();
+        }
+        ChannelHandlerContext conn = connectionQueue.poll();
+        if (conn != null) quickSize.decrementAndGet();
+        return conn;
+    }
+
+    private void initNewConnection() {
         try {
             ChannelFuture future = bootstrap.connect(addr);
-            ch.connected.incrementAndGet();
         } catch (ChannelException e) {
             if (e.getCause() instanceof SocketException) {
                 processLimitErrors();
@@ -285,6 +299,7 @@ public class StressClient {
         scheduler.shutdown();
         statExecutor.shutdown();
         bootstrap.group().shutdownGracefully();
+        for (ChannelHandlerContext ctx : connectionQueue) ctx.close();
 
         stopped = true;
 
@@ -400,8 +415,13 @@ public class StressClient {
         return (int) Math.ceil(c.tuningFactor * dynamicRate.get());
     }
 
+    /**
+     * TODO: change this logic
+     *
+     * @return rate
+     */
     private int calculateInitRate() {
-        int conn = ch.connected.get();
+        int conn = quickSize.get();
         return (int) c.initialTuningFactor * MILLION / conn;
     }
 
@@ -434,32 +454,14 @@ public class StressClient {
 
         @Override
         public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-            if (pause) {
-                ctx.close();
-                return;
-            }
+            if (!pause && connectionQueue.offer(ctx)) quickSize.incrementAndGet();
 
-            requestExecutor.execute(new Runnable() {
-                @Override
-                public void run() {
-                    ByteBuf req = c.requestGenerator.next();
-                    ctx.attr(TS_ATTR).set(System.currentTimeMillis());
-                    ctx.writeAndFlush(req);
-
-                    ch.sentBytes.addAndGet(req.capacity());
-                    ch.total.incrementAndGet();
-                }
-            });
-
-            ch.sent.incrementAndGet();
+            sendRequest();
         }
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, ByteBuf resp) throws Exception {
-            if (pause) {
-                ctx.channel().close();
-                return;
-            }
+            if (pause) return;
 
             final int status = getStatus(resp);
             if (status > 0) { // beginning of response
@@ -491,10 +493,6 @@ public class StressClient {
 
         @Override
         public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-            // work-around against netty bug
-            // http://stackoverflow.com/questions/25972426/netty-4-channelinboundhandleradapter-channelreadcomplete-called-twice
-            if (ctx.attr(READ_ATTR).get() != null) return;
-
             Long start = ctx.attr(TS_ATTR).get();
             if (start != null) {
                 final long latency = System.currentTimeMillis() - start;
@@ -505,13 +503,10 @@ public class StressClient {
                     countStatuses(status, latency);
                 }
             }
-            ctx.attr(READ_ATTR).set(true);
         }
 
         @Override
         public void exceptionCaught(ChannelHandlerContext ctx, Throwable exc) throws Exception {
-            ctx.close();
-
             if (exc instanceof ConnectTimeoutException ||
                     exc instanceof ReadTimeoutException || exc instanceof WriteTimeoutException) {
                 ch.te.incrementAndGet();
@@ -532,5 +527,32 @@ public class StressClient {
             }
         }
 
+    }
+
+    private void sendRequest() {
+
+        final ChannelHandlerContext ctx = borrowConnectionOrCreateNew();
+
+        if (ctx != null) {
+            requestExecutor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    if (!ctx.channel().isOpen()) {
+                        initNewConnection();
+                        return;
+                    }
+
+                    ByteBuf req = c.requestGenerator.next();
+                    ctx.attr(TS_ATTR).set(System.currentTimeMillis());
+                    ctx.writeAndFlush(req);
+
+                    ch.sentBytes.addAndGet(req.capacity());
+                    ch.total.incrementAndGet();
+                    ch.sent.incrementAndGet();
+
+                    if (connectionQueue.offerFirst(ctx)) quickSize.incrementAndGet(); // return back
+                }
+            });
+        }
     }
 }

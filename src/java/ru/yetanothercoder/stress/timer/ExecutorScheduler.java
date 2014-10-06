@@ -1,40 +1,42 @@
 package ru.yetanothercoder.stress.timer;
 
+import io.netty.util.concurrent.DefaultThreadFactory;
+
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
+import static ru.yetanothercoder.stress.StressClient.NUM_OF_CORES;
 
 /**
  * @author Mikhail Baturov, 6/27/13 1:26 PM
  */
 public class ExecutorScheduler implements Scheduler {
 
-    private final ScheduledExecutorService requestExecutor = Executors.newSingleThreadScheduledExecutor();
+    private final ScheduledExecutorService executor = Executors.newScheduledThreadPool(NUM_OF_CORES, new DefaultThreadFactory("request-scheduler"));
 
     @Override
-    public void startAtFixedRate(final Runnable task, final AtomicInteger rateMicro) {
-        requestExecutor.schedule(new Runnable() {
+    public void startAtFixedRate(final Runnable task, final int rateMicros) {
+        executor.schedule(new Runnable() {
             @Override
             public void run() {
-                if (requestExecutor.isShutdown()) return;
+                if (executor.isShutdown()) return;
 
-                requestExecutor.schedule(this, rateMicro.get(), MICROSECONDS);
+                executor.schedule(this, rateMicros, MICROSECONDS);
                 task.run();
             }
-        }, rateMicro.get(), MICROSECONDS);
+        }, rateMicros, MICROSECONDS);
     }
 
     @Override
     public void executeNow(Runnable task) {
-        if (requestExecutor.isShutdown()) return;
+        if (executor.isShutdown()) return;
 
-        requestExecutor.execute(task);
+        executor.execute(task);
     }
 
     @Override
     public void shutdown() {
-        requestExecutor.shutdownNow();
+        executor.shutdownNow();
     }
 }

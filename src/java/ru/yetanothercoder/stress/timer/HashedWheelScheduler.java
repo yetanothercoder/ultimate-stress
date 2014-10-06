@@ -5,7 +5,6 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 
@@ -17,16 +16,16 @@ public class HashedWheelScheduler implements Scheduler {
     private final HashedWheelTimer hwTimer = new HashedWheelTimer(10, MICROSECONDS);
 
     @Override
-    public void startAtFixedRate(final Runnable task, final AtomicInteger rateMicro) {
+    public void startAtFixedRate(final Runnable task, final int rateMicros) {
         hwTimer.newTimeout(new TimerTask() {
             @Override
             public void run(Timeout timeout) throws Exception {
                 if (timeout.isCancelled()) return;
 
-                hwTimer.newTimeout(this, rateMicro.get(), MICROSECONDS);
+                hwTimer.newTimeout(this, rateMicros, MICROSECONDS);
                 task.run();
             }
-        }, rateMicro.get(), MICROSECONDS);
+        }, rateMicros, MICROSECONDS);
     }
 
     @Override
