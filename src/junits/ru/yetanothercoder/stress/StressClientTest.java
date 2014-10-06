@@ -28,18 +28,23 @@ public class StressClientTest {
 
     @Test
     public void testReceivingAndSending() throws Exception {
-        StressConfig config = new StressConfig.Builder().url("http://localhost:8888/").rps(100).readTimeout(1000).writeTimeout(1000)
+        StressConfig config = new StressConfig.Builder()
+                .url("http://localhost:8888/")
+                .rps(500)
+                .connectionNum(300)
+//                .readTimeout(100).writeTimeout(100)
                 .build();
         StressClient client = new StressClient(config);
         SECONDS.sleep(1);
 
         client.start();
-        SECONDS.sleep(10);
+        SECONDS.sleep(100);
 
         client.stop(true);
         SECONDS.sleep(1);
-//        System.out.println(client.respStats.size + " " + server.ch.total.get());
-        Assert.assertTrue(client.respStats.size - server.ch.total.get() < 5);
+        System.out.println();
+        Assert.assertTrue("resp in client=" + client.respStats.size + ", req on server=" + server.ch.total.get(),
+                Math.abs(client.respStats.size - server.ch.total.get()) < 10);
     }
 
     @Test

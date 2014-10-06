@@ -86,6 +86,7 @@ public class StressClient {
     private final Metric connStat = new Metric("Conn/s");
 
     Metric.MetricResults respStats;
+    private AtomicInteger statCounter = new AtomicInteger(0);
 
     public static void main(String[] args) throws Exception {
         try {
@@ -147,6 +148,7 @@ public class StressClient {
                 .option(ChannelOption.SO_KEEPALIVE, true)
                 .option(ChannelOption.SO_REUSEADDR, true)
                 .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, connTimeoutMs)
+                .option(ChannelOption.MAX_MESSAGES_PER_READ, Integer.MAX_VALUE)
                 .handler(new ChannelInitializer<SocketChannel>() {
                     @Override
                     public void initChannel(SocketChannel ch) throws Exception {
@@ -190,6 +192,11 @@ public class StressClient {
         }
 
         started = System.currentTimeMillis();
+
+        for (int i = 0; i < c.connectionNum; i++) {
+            initNewConnection();
+        }
+
         scheduler.startAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -201,7 +208,6 @@ public class StressClient {
             @Override
             public void run() {
                 printPeriodicStats();
-
             }
         }, 0, 1, SECONDS);
 
@@ -239,13 +245,13 @@ public class StressClient {
     }
 
     private void printPeriodicStats() {
-        /*int conn = ch.connected.get();
-        if (dynamicRate.get() > 1) {
-            connStat.register(conn);
-            ch.connected.set(0);
-        }*/
         final int sentSoFar = ch.sent.getAndSet(0);
         rpsStat.register(sentSoFar);
+        if (statCounter.incrementAndGet() % 10 == 0 && sentSoFar < dynamicRate.get()) {
+            int newRate = tuneRate(false);
+            dynamicRate.set(newRate);
+            System.out.printf("TUNING: new rps=%s%n", MILLION / dynamicRate.get());
+        }
 
         if (c.quiet) {
             System.out.print(".");
@@ -266,15 +272,25 @@ public class StressClient {
 
 
     private ChannelHandlerContext borrowConnectionOrCreateNew() {
-        if (quickSize.get() < c.connectionNum) {
-            initNewConnection();
+        while (true) {
+            ChannelHandlerContext ctx = connectionQueue.poll();
+            if (ctx == null) {
+                initNewConnection();
+                return null;
+            }
+
+            quickSize.decrementAndGet();
+            if (ctx.channel().isActive()) {
+                return ctx;
+            } else {
+                initNewConnection();
+            }
         }
-        ChannelHandlerContext conn = connectionQueue.poll();
-        if (conn != null) quickSize.decrementAndGet();
-        return conn;
     }
 
     private void initNewConnection() {
+        if (quickSize.get() >= c.connectionNum) return;
+
         try {
             ChannelFuture future = bootstrap.connect(addr);
         } catch (ChannelException e) {
@@ -393,7 +409,7 @@ public class StressClient {
         pause = true;
 
         int oldRate = dynamicRate.get();
-        int newRate = dynamicRate.get() > 1 ? tuneRate() : calculateInitRate();
+        int newRate = dynamicRate.get() > 1 ? tuneRate(true) : calculateInitRate();
 
         int newRps = (MILLION / newRate);
         int oldRps = (MILLION / oldRate);
@@ -411,8 +427,9 @@ public class StressClient {
         }, 3, SECONDS);
     }
 
-    private int tuneRate() {
-        return (int) Math.ceil(c.tuningFactor * dynamicRate.get());
+    private int tuneRate(boolean up) {
+        double tuned = up ? dynamicRate.get() * c.tuningFactor : dynamicRate.get() / c.tuningFactor;
+        return (int) Math.ceil(tuned);
     }
 
     /**
@@ -454,9 +471,7 @@ public class StressClient {
 
         @Override
         public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-            if (!pause && connectionQueue.offer(ctx)) quickSize.incrementAndGet();
-
-            sendRequest();
+            if (!pause && connectionQueue.offerFirst(ctx)) quickSize.incrementAndGet();
         }
 
         @Override
@@ -493,7 +508,7 @@ public class StressClient {
 
         @Override
         public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
-            Long start = ctx.attr(TS_ATTR).get();
+            Long start = ctx.attr(TS_ATTR).getAndRemove();
             if (start != null) {
                 final long latency = System.currentTimeMillis() - start;
                 responseSummary.register(latency);
@@ -502,6 +517,8 @@ public class StressClient {
                 if (status != null && c.httpStatuses) {
                     countStatuses(status, latency);
                 }
+                if (quickSize.get() < c.connectionNum && connectionQueue.offer(ctx))
+                    quickSize.incrementAndGet(); // return back
             }
         }
 
@@ -537,20 +554,24 @@ public class StressClient {
             requestExecutor.execute(new Runnable() {
                 @Override
                 public void run() {
-                    if (!ctx.channel().isOpen()) {
-                        initNewConnection();
+                    if (!ctx.channel().isActive()) {
                         return;
                     }
 
-                    ByteBuf req = c.requestGenerator.next();
+                    final ByteBuf req = c.requestGenerator.next();
                     ctx.attr(TS_ATTR).set(System.currentTimeMillis());
-                    ctx.writeAndFlush(req);
+                    ctx.writeAndFlush(req).addListener(new ChannelFutureListener() {
+                        @Override
+                        public void operationComplete(ChannelFuture future) throws Exception {
+                            if (future.isSuccess()) {
+                                ch.sentBytes.addAndGet(req.capacity());
+                                ch.total.incrementAndGet();
+                                ch.sent.incrementAndGet();
+                            }
+                        }
+                    });
 
-                    ch.sentBytes.addAndGet(req.capacity());
-                    ch.total.incrementAndGet();
-                    ch.sent.incrementAndGet();
 
-                    if (connectionQueue.offerFirst(ctx)) quickSize.incrementAndGet(); // return back
                 }
             });
         }

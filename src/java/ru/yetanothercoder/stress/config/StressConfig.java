@@ -36,10 +36,10 @@ final public class StressConfig {
     public final Path dir;
     public final String prefix;
     public final int serverRandomDelayMs;
-    public final int connectionNum = 100;
+    public final int connectionNum;
     public final List<String> headers;
 
-    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpStatuses, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, List<String> headers) {
+    public StressConfig(URI url, int initRps, int durationSec, double tuningFactor, double initialTuningFactor, boolean print, boolean debug, boolean quiet, boolean httpStatuses, int server, int sample, SchedulerType type, int readTimeoutMs, int writeTimeoutMs, Path dir, String prefix, RequestGenerator requestGenerator, int serverRandomDelayMs, int connectionNum, List<String> headers) {
         this.url = url;
         this.initRps = initRps;
         this.durationSec = durationSec;
@@ -58,6 +58,7 @@ final public class StressConfig {
         this.prefix = prefix;
         this.requestGenerator = requestGenerator;
         this.serverRandomDelayMs = serverRandomDelayMs;
+        this.connectionNum = connectionNum;
         this.headers = new ArrayList<>(headers); // def copy
     }
 
@@ -116,6 +117,7 @@ final public class StressConfig {
         String prefix;
         RequestGenerator requestGenerator;
         int serverRandomDelayMs = -1;
+        int connectionNum = 100;
         List<String> headers = new ArrayList<>(2);
 
         public Builder url(URI url) {
@@ -222,6 +224,11 @@ final public class StressConfig {
             return this;
         }
 
+        public Builder connectionNum(int num) {
+            this.connectionNum = num;
+            return this;
+        }
+
         public StressConfig build() {
             if (requestGenerator == null && url != null) {
                 int port = url.getPort() < 0 ? 80 : url.getPort();
@@ -231,7 +238,7 @@ final public class StressConfig {
                 requestGenerator = new GetHttpRequestGenerator(url.getHost(), port, query, headers);
             }
             return new StressConfig(url, initRps, durationSec, tuningFactor, initialTuningFactor, print, debug,
-                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator, serverRandomDelayMs, headers);
+                    quiet, httpErrors, server, sample, exec, readTimeoutMs, writeTimeoutMs, dir, prefix, requestGenerator, serverRandomDelayMs, connectionNum, headers);
         }
 
         public StressClient buildClient() {
