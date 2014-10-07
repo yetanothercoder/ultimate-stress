@@ -222,6 +222,25 @@ public class StressClient {
             }, c.durationSec, SECONDS);
         }
 
+        /*Executors.newSingleThreadExecutor().submit(new Runnable() {
+            @Override
+            public void run() {
+                while (!Thread.currentThread().isInterrupted()) {
+                    int size = quickSize.get();
+                    for (int i = size; i < c.connectionNum; i++) {
+                         initNewConnection();
+                    }
+
+                    try {
+                        MICROSECONDS.sleep(dynamicRate.get() * NUM_OF_CORES);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        });*/
+
         enableStoppingOnShutdown();
     }
 
@@ -274,7 +293,7 @@ public class StressClient {
     private ChannelHandlerContext borrowConnectionOrCreateNew() {
         while (true) {
             ChannelHandlerContext ctx = connectionQueue.poll();
-            if (ctx == null) {
+            if (ctx == null) { // queue empty yet
                 initNewConnection();
                 return null;
             }
@@ -299,11 +318,7 @@ public class StressClient {
             } else {
                 ch.oe.incrementAndGet();
             }
-            if (c.debug) {
-                e.printStackTrace(System.err);
-            }
         }
-
     }
 
     public void stop(boolean showSummaryStat) {
@@ -566,12 +581,13 @@ public class StressClient {
                     }
 
                     final ByteBuf req = c.requestGenerator.next();
+                    final int written = req.capacity();
                     ctx.attr(TS_ATTR).set(System.currentTimeMillis());
                     ctx.writeAndFlush(req).addListener(new ChannelFutureListener() {
                         @Override
                         public void operationComplete(ChannelFuture future) throws Exception {
                             if (future.isSuccess()) {
-                                ch.sentBytes.addAndGet(req.capacity());
+                                ch.sentBytes.addAndGet(written);
                                 ch.total.incrementAndGet();
                                 ch.sent.incrementAndGet();
                             }

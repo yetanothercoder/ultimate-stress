@@ -19,6 +19,13 @@ public class StressClientTest {
     public void setUp() throws Exception {
         server = new CountingServer(8888, 50, false);
         server.start();
+
+        Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+            @Override
+            public void uncaughtException(Thread t, Throwable e) {
+                System.out.printf("%s thread exception: %s", t, e);
+            }
+        });
     }
 
     @After
@@ -31,20 +38,20 @@ public class StressClientTest {
         StressConfig config = new StressConfig.Builder()
                 .url("http://localhost:8888/")
                 .rps(500)
-                .connectionNum(300)
+                .connectionNum(500)
                 .readTimeout(100).writeTimeout(100)
                 .build();
         StressClient client = new StressClient(config);
         SECONDS.sleep(1);
 
         client.start();
-        SECONDS.sleep(100);
+        SECONDS.sleep(5);
 
         client.stop(true);
         SECONDS.sleep(1);
         System.out.println();
         Assert.assertTrue("resp in client=" + client.respStats.size + ", req on server=" + server.ch.total.get(),
-                Math.abs(client.respStats.size - server.ch.total.get()) < 10);
+                Math.abs(client.respStats.size - server.ch.total.get()) < 500);
     }
 
     @Test
