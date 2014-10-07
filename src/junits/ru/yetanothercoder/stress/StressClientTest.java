@@ -32,7 +32,7 @@ public class StressClientTest {
                 .url("http://localhost:8888/")
                 .rps(500)
                 .connectionNum(300)
-//                .readTimeout(100).writeTimeout(100)
+                .readTimeout(100).writeTimeout(100)
                 .build();
         StressClient client = new StressClient(config);
         SECONDS.sleep(1);

@@ -247,7 +247,7 @@ public class StressClient {
     private void printPeriodicStats() {
         final int sentSoFar = ch.sent.getAndSet(0);
         rpsStat.register(sentSoFar);
-        if (statCounter.incrementAndGet() % 10 == 0 && sentSoFar < dynamicRate.get()) {
+        if (statCounter.incrementAndGet() % 100 == 0 && sentSoFar < dynamicRate.get()) {
             int newRate = tuneRate(false);
             dynamicRate.set(newRate);
             System.out.printf("TUNING: new rps=%s%n", MILLION / dynamicRate.get());
@@ -472,6 +472,13 @@ public class StressClient {
         @Override
         public void channelActive(final ChannelHandlerContext ctx) throws Exception {
             if (!pause && connectionQueue.offerFirst(ctx)) quickSize.incrementAndGet();
+
+            requestExecutor.submit(new Runnable() {
+                @Override
+                public void run() {
+                    if (!pause) sendRequest();
+                }
+            });
         }
 
         @Override
