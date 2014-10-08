@@ -58,7 +58,7 @@ final public class StressConfig {
         this.prefix = prefix;
         this.requestGenerator = requestGenerator;
         this.serverRandomDelayMs = serverRandomDelayMs;
-        this.connectionNum = connectionNum;
+        this.connectionNum = Math.min(connectionNum, initRps);
         this.headers = new ArrayList<>(headers); // def copy
     }
 

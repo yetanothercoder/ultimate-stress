@@ -40,6 +40,7 @@ public class StressClientTest {
                 .rps(500)
                 .connectionNum(500)
                 .readTimeout(100).writeTimeout(100)
+//                .debug()
                 .build();
         StressClient client = new StressClient(config);
         SECONDS.sleep(1);

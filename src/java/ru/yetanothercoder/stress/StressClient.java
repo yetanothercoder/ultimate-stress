@@ -35,6 +35,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static java.lang.System.out;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 import static ru.yetanothercoder.stress.utils.Utils.formatLatency;
@@ -100,7 +101,7 @@ public class StressClient {
         } catch (Exception e) {
             System.err.printf("wrong params: `%s`%n", e);
 
-            System.out.printf(
+            out.printf(
                     "Usage*: java -jar ultimate-stress-x.x.jar [-t <N> -s <N> -rt <N> -wt=<N> -sh=<1,2,3> -Dprint=<0,1> -debug=<any> -sample <N> -Dtfactor=1.2 -Dtfactor0=1.1] <url> [<rps>]%n" +
                             "-t duration in seconds%n" +
                             "-s server option%n%n" +
@@ -183,7 +184,7 @@ public class StressClient {
         }
 
         int initRps = MILLION / dynamicRate.get();
-        System.out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config:%n%s%n",
+        out.printf("Starting stress `%s` to `%s` with %,d rps (rate=%,d micros), full config:%n%s%n",
                 name, addr, initRps, dynamicRate.get(), c);
 
         if (!checkConnection()) {
@@ -215,7 +216,7 @@ public class StressClient {
             statExecutor.schedule(new Runnable() {
                 @Override
                 public void run() {
-                    System.out.printf("duration %s seconds elapsed, exiting...%n", c.durationSec);
+                    out.printf("duration %s seconds elapsed, exiting...%n", c.durationSec);
                     StressClient.this.stop(true);
                     System.exit(0);
                 }
@@ -269,13 +270,13 @@ public class StressClient {
         if (statCounter.incrementAndGet() % 100 == 0 && sentSoFar < dynamicRate.get()) {
             int newRate = tuneRate(false);
             dynamicRate.set(newRate);
-            System.out.printf("TUNING: new rps=%s%n", MILLION / dynamicRate.get());
+            out.printf("TUNING: new rps=%s%n", MILLION / dynamicRate.get());
         }
 
         if (c.quiet) {
-            System.out.print(".");
+            out.print(".");
         } else {
-            System.out.printf("STAT: sent=%,6d, received=%,6d, connections=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, oe=%,d%n",
+            out.printf("STAT: sent=%,6d, received=%,6d, connections=%,6d, rate=%,4d | ERRORS: timeouts=%,5d, binds=%,5d, connects=%,5d, io=%,5d, oe=%,d%n",
                     sentSoFar,
                     ch.received.getAndSet(0),
                     quickSize.getAndSet(connectionQueue.size()),
@@ -302,6 +303,7 @@ public class StressClient {
             if (ctx.channel().isActive()) {
                 return ctx;
             } else {
+                if (c.debug) out.println("DEBUG: closed connection in pool");
                 initNewConnection();
             }
         }
@@ -312,6 +314,7 @@ public class StressClient {
 
         try {
             ChannelFuture future = bootstrap.connect(addr);
+            if (c.debug) out.println("DEBUG: making new connection");
         } catch (ChannelException e) {
             if (e.getCause() instanceof SocketException) {
                 processLimitErrors();
@@ -324,7 +327,7 @@ public class StressClient {
     public void stop(boolean showSummaryStat) {
         if (stopped) return;
 
-        System.out.printf("client `%s` stopping...%n", name);
+        out.printf("client `%s` stopping...%n", name);
 
         requestExecutor.shutdownNow();
         scheduler.shutdown();
@@ -352,7 +355,7 @@ public class StressClient {
         long totalRps = respStats.size / totalDurationSec;
 
 
-        System.out.printf(
+        out.printf(
                 "%nFinished stress @ %s for %s%n" +
                         "  Used %d-%d threads and ~%d connection per sec%n" +
                         "     STATS         AVG       STDEV         MAX %n" +
@@ -379,7 +382,7 @@ public class StressClient {
             Metric.MetricResults errorStats = errorResp.calculateAndReset();
             int successes = (int) (successStats.size * 1.0 / respStats.size * 100);
             int errors = (int) (errorStats.size * 1.0 / respStats.size * 100);
-            System.out.printf(
+            out.printf(
                     "  %d%% Success(2xx-3xx) Responses:%n" +
                             "     50%% %10s%n" +
                             "     75%% %10s%n" +
@@ -407,7 +410,7 @@ public class StressClient {
             if (c.debug) System.err.printf("%nDEBUG, Metrics: %s, %s%n", successStats, errorStats);
         }
 
-        System.out.printf("%nSUMMARY: %,d requests sent (%,d received) in %s, sent %,.2f MB, received %,.2f MB, RPS~%s%n",
+        out.printf("%nSUMMARY: %,d requests sent (%,d received) in %s, sent %,.2f MB, received %,.2f MB, RPS~%s%n",
                 ch.total.get(), respStats.size, formatLatency(totalMs), sentMb, receivedMb, totalRps
         );
 
@@ -458,14 +461,14 @@ public class StressClient {
     }
 
     private void sampleRequests(final int sampleSize) {
-        System.out.print("request sampling: ");
+        out.print("request sampling: ");
         long total = 0;
         ByteBuf[] sampleAgainstJitOpt = new ByteBuf[1000];
         Arrays.fill(sampleAgainstJitOpt, Unpooled.copiedBuffer("empty".getBytes()));
 
         int tenPercent = sampleSize / 10;
         for (int i = 0, p = 0; i < sampleSize; i++) {
-            if (i % tenPercent == 0) System.out.printf(" %,d%%", ++p * 10);
+            if (i % tenPercent == 0) out.printf(" %,d%%", ++p * 10);
 
             long t0 = System.nanoTime();
             ByteBuf request = c.requestGenerator.next();
@@ -474,10 +477,10 @@ public class StressClient {
             sampleAgainstJitOpt[new Random().nextInt(1000)] = request;
         }
         long requestNs = total / sampleSize;
-        System.out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
+        out.printf("%n%nrequest preparation time: %,d ns (av on %,d runs), so MAX rps=%,d%n", requestNs, sampleSize, 1_000_000_000 / requestNs);
 
         String randomRequest = new String(sampleAgainstJitOpt[new Random().nextInt(1000)].array());
-        System.out.printf("random sample: %n%s%n%n", randomRequest);
+        out.printf("random sample: %n%s%n%n", randomRequest);
     }
 
 
@@ -486,9 +489,12 @@ public class StressClient {
 
         @Override
         public void channelActive(final ChannelHandlerContext ctx) throws Exception {
-            if (!pause && connectionQueue.offerFirst(ctx)) quickSize.incrementAndGet();
+            if (!pause && connectionQueue.offerFirst(ctx)) {
+                quickSize.incrementAndGet();
+                if (c.debug) out.println("DEBUG: connection active");
+            }
 
-            requestExecutor.submit(new Runnable() {
+            scheduler.executeNow(new Runnable() {
                 @Override
                 public void run() {
                     if (!pause) sendRequest();
@@ -509,7 +515,7 @@ public class StressClient {
 
             ch.receivedBytes.addAndGet(resp.capacity());
             if (c.print) {
-                System.out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
+                out.printf("response: %s%n", resp.toString(Charset.defaultCharset()));
             }
 
 
@@ -539,8 +545,10 @@ public class StressClient {
                 if (status != null && c.httpStatuses) {
                     countStatuses(status, latency);
                 }
-                if (quickSize.get() < c.connectionNum && connectionQueue.offer(ctx))
+                if (quickSize.get() < c.connectionNum && connectionQueue.offer(ctx)) {
                     quickSize.incrementAndGet(); // return back
+                    if (c.debug) out.println("DEBUG: returning connection to pool");
+                }
             }
         }
 
@@ -577,6 +585,7 @@ public class StressClient {
                 @Override
                 public void run() {
                     if (!ctx.channel().isActive()) {
+                        if (c.debug) out.println("DEBUG: connection expired");
                         return;
                     }
 
